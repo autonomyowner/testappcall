@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import socket from './socket'; // Import the socket instance
+import socket from './socket'; 
 
 const VideoChat = () => {
     const localVideoRef = useRef(null);
@@ -55,7 +55,7 @@ const VideoChat = () => {
         socket.on('offer', handleReceiveOffer);
         socket.on('answer', handleReceiveAnswer);
         socket.on('candidate', handleReceiveCandidate);
-        socket.on('chatMessage', handleReceiveChatMessage); // Listen for incoming chat messages
+        socket.on('chatMessage', handleReceiveChatMessage);
 
         return () => {
             socket.off('offer', handleReceiveOffer);
@@ -140,7 +140,7 @@ const VideoChat = () => {
 
     return (
         <div>
-            <div>
+            <div style={{border: '1px solid #ccc'}}>
                 <video ref={localVideoRef} autoPlay muted />
                 <video ref={remoteVideoRef} autoPlay />
             </div>

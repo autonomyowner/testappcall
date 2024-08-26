@@ -15,23 +15,27 @@ const io = socketIO(server, {
         origin: "http://localhost:5173", 
         methods: ["GET", "POST"], // Allowed HTTP methods
         allowedHeaders: ["Content-Type"],
-        credentials: true // Allow credentials (cookies, etc.)
+        credentials: true // Allow credentials
     }
 });
+
+app.get("/", (req, res) => {
+    res.send('Server is Running');
+})
 
 const PORT = process.env.PORT || 5000;
 
 io.on('connection', (socket) => {
-    console.log('New user connected:', socket.id);
+    socket.emit('me', socket.id)
 
     // Handle the 'offer' event from the client
-    socket.on('offer', (data) => {
-        socket.broadcast.emit('offer', data);
+    socket.on('offer', ({userTocall, signalData, from, name}) => {
+        io.to(userTocall).emit('offer', {signal: signalData, from, name})
     });
 
     // Handle the 'answer' event from the client
     socket.on('answer', (data) => {
-        socket.broadcast.emit('answer', data);
+        io.to(data.to).emit('callaccepted', data.signal)
     });
 
     // Handle the 'candidate' event from the client
@@ -46,7 +50,7 @@ io.on('connection', (socket) => {
 
     // Handle when a user disconnects
     socket.on('disconnect', () => {
-        console.log('User disconnected:', socket.id);
+        socket.broadcast.emit('callended')
     });
 });
 

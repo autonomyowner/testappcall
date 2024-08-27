@@ -8,7 +8,9 @@ const VideoChat = () => {
     const [isCallStarted, setIsCallStarted] = useState(false);
     const [chatMessages, setChatMessages] = useState([]); // State to hold chat messages
     const [message, setMessage] = useState(''); // State to hold the current input message
-    const [isScreenSharing, setIsScreenSharing] = useState(false); // State to track screen sharing
+    const [isScreenSharing, setIsScreenSharing] = useState(false); // State to track screen 
+    const [me, setMe] = useState('')
+
 
     useEffect(() => {
         const handleReceiveOffer = async (offer) => {
@@ -17,6 +19,7 @@ const VideoChat = () => {
 
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             localVideoRef.current.srcObject = stream;
+
 
             stream.getTracks().forEach(track => {
                 peerConnection.addTrack(track, stream);

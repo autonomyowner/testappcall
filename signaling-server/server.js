@@ -1,56 +1,58 @@
 const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
-const cors = require('cors'); // Import the cors middleware
+const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
 
-// Use the cors middleware with default settings
 app.use(cors());
 
-// Configure Socket.io with CORS options
 const io = socketIO(server, {
     cors: {
-        origin: "http://localhost:5173", 
-        methods: ["GET", "POST"], // Allowed HTTP methods
+        origin: "http://localhost:5173", // Your React app origin
+        methods: ["GET", "POST"],
         allowedHeaders: ["Content-Type"],
-        credentials: true // Allow credentials
+        credentials: true
     }
 });
-
-app.get("/", (req, res) => {
-    res.send('Server is Running');
-})
 
 const PORT = process.env.PORT || 5000;
 
 io.on('connection', (socket) => {
     socket.emit('me', socket.id)
 
-    // Handle the 'offer' event from the client
-    socket.on('offer', ({userTocall, signalData, from, name}) => {
-        io.to(userTocall).emit('offer', {signal: signalData, from, name})
+    // Join the user to a room (a room name can be anything, here we use "main")
+    socket.join("main");
+
+    // Notify the new user of all other users in the room
+    const usersInRoom = Array.from(io.sockets.adapter.rooms.get("main") || []).filter(id => id !== socket.id);
+    socket.emit('allUsers', usersInRoom);
+
+    // Broadcast an offer to other users
+    socket.on('offer', ({ to, offer }) => {
+        socket.to(to).emit('offer', { from: socket.id, offer });
     });
 
-    // Handle the 'answer' event from the client
-    socket.on('answer', (data) => {
-        io.to(data.to).emit('callaccepted', data.signal)
+    // Broadcast an answer to other users
+    socket.on('answer', ({ to, answer }) => {
+        socket.to(to).emit('answer', { from: socket.id, answer });
     });
 
-    // Handle the 'candidate' event from the client
-    socket.on('candidate', (data) => {
-        socket.broadcast.emit('candidate', data);
+    // Broadcast ICE candidates to other users
+    socket.on('candidate', ({ to, candidate }) => {
+        socket.to(to).emit('candidate', { from: socket.id, candidate });
     });
 
-    // Handle the 'chatMessage' event from the client
+    // Broadcast chat messages to other users
     socket.on('chatMessage', (message) => {
         socket.broadcast.emit('chatMessage', message);
     });
 
     // Handle when a user disconnects
     socket.on('disconnect', () => {
-        socket.broadcast.emit('callended')
+        console.log('User disconnected:', socket.id);
+        socket.broadcast.emit('userDisconnected', socket.id);
     });
 });
 

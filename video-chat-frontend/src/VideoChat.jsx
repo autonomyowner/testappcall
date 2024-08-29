@@ -1,53 +1,40 @@
 import React, { useRef, useState, useEffect } from 'react';
-import socket from './socket'; 
+import socket from './socket';
 
 const VideoChat = () => {
     const localVideoRef = useRef(null);
-    const remoteVideoRef = useRef(null); // Reference for the remote video
-    const peerConnectionRef = useRef(null); // Reference for the peer connection
+    const peerConnectionsRef = useRef({});
+    const [remoteStreams, setRemoteStreams] = useState([]);
     const [isCallStarted, setIsCallStarted] = useState(false);
-    const [chatMessages, setChatMessages] = useState([]); // State to hold chat messages
-    const [message, setMessage] = useState(''); // State to hold the current input message
-    const [isScreenSharing, setIsScreenSharing] = useState(false); // State to track screen 
-    const [me, setMe] = useState('')
-
+    const [chatMessages, setChatMessages] = useState([]);
+    const [message, setMessage] = useState('');
+    const [isScreenSharing, setIsScreenSharing] = useState(false);
 
     useEffect(() => {
-        const handleReceiveOffer = async (offer) => {
-            const peerConnection = new RTCPeerConnection();
-            peerConnectionRef.current = peerConnection;
-
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            localVideoRef.current.srcObject = stream;
-
+        const handleReceiveOffer = async ({ from, offer }) => {
+            const peerConnection = createPeerConnection(from);
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+            const stream = await getUserMedia();
+            if (localVideoRef.current) {
+                localVideoRef.current.srcObject = stream;
+            }
 
             stream.getTracks().forEach(track => {
                 peerConnection.addTrack(track, stream);
             });
 
-            peerConnection.ontrack = (event) => {
-                remoteVideoRef.current.srcObject = event.streams[0];
-            };
-
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    socket.emit('candidate', event.candidate);
-                }
-            };
-
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
             const answer = await peerConnection.createAnswer();
             await peerConnection.setLocalDescription(answer);
-            socket.emit('answer', answer);
+            socket.emit('answer', { to: from, answer });
         };
 
-        const handleReceiveAnswer = async (answer) => {
-            const peerConnection = peerConnectionRef.current;
+        const handleReceiveAnswer = async ({ from, answer }) => {
+            const peerConnection = peerConnectionsRef.current[from];
             await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
         };
 
-        const handleReceiveCandidate = async (candidate) => {
-            const peerConnection = peerConnectionRef.current;
+        const handleReceiveCandidate = async ({ from, candidate }) => {
+            const peerConnection = peerConnectionsRef.current[from];
             await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
         };
 
@@ -60,48 +47,73 @@ const VideoChat = () => {
         socket.on('candidate', handleReceiveCandidate);
         socket.on('chatMessage', handleReceiveChatMessage);
 
+        socket.emit('joinRoom');
+        socket.on('allUsers', handleAllUsers);
+
         return () => {
             socket.off('offer', handleReceiveOffer);
             socket.off('answer', handleReceiveAnswer);
             socket.off('candidate', handleReceiveCandidate);
             socket.off('chatMessage', handleReceiveChatMessage);
+            socket.off('allUsers', handleAllUsers);
         };
     }, []);
 
-    const startCall = async () => {
-        setIsCallStarted(true);
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        localVideoRef.current.srcObject = stream;
+    const getUserMedia = async () => {
+        try {
+            return await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        } catch (error) {
+            console.error('Error accessing media devices.', error);
+            alert('Could not access your camera or microphone. Please check your devices.');
+            throw error;
+        }
+    };
 
+    const createPeerConnection = (userId) => {
         const peerConnection = new RTCPeerConnection();
-        peerConnectionRef.current = peerConnection;
-
-        stream.getTracks().forEach(track => {
-            peerConnection.addTrack(track, stream);
-        });
 
         peerConnection.ontrack = (event) => {
-            remoteVideoRef.current.srcObject = event.streams[0];
+            setRemoteStreams(prevStreams => {
+                const existingStream = prevStreams.find(stream => stream.id === event.streams[0].id);
+                if (existingStream) return prevStreams;
+                return [...prevStreams, event.streams[0]];
+            });
         };
 
         peerConnection.onicecandidate = (event) => {
             if (event.candidate) {
-                socket.emit('candidate', event.candidate);
+                socket.emit('candidate', { to: userId, candidate: event.candidate });
             }
         };
 
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        socket.emit('offer', offer);
+        peerConnectionsRef.current[userId] = peerConnection;
+        return peerConnection;
+    };
+
+    const handleAllUsers = async (users) => {
+        const stream = await getUserMedia();
+        if (localVideoRef.current) {
+            localVideoRef.current.srcObject = stream;
+        }
+
+        users.forEach(async (userId) => {
+            const peerConnection = createPeerConnection(userId);
+
+            stream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, stream);
+            });
+
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            socket.emit('offer', { to: userId, offer });
+        });
     };
 
     const sendMessage = () => {
         if (message.trim()) {
-            // Send the message via Socket.io
             socket.emit('chatMessage', message);
-            // Update local chat state
             setChatMessages(prevMessages => [...prevMessages, { text: message, fromSelf: true }]);
-            setMessage(''); // Clear the input field
+            setMessage('');
         }
     };
 
@@ -118,8 +130,10 @@ const VideoChat = () => {
             const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
             const videoTrack = screenStream.getVideoTracks()[0];
 
-            const sender = peerConnectionRef.current.getSenders().find(sender => sender.track.kind === 'video');
-            sender.replaceTrack(videoTrack);
+            Object.values(peerConnectionsRef.current).forEach(peerConnection => {
+                const sender = peerConnection.getSenders().find(sender => sender.track.kind === 'video');
+                sender.replaceTrack(videoTrack);
+            });
 
             videoTrack.onended = () => {
                 stopScreenShare();
@@ -132,22 +146,41 @@ const VideoChat = () => {
     };
 
     const stopScreenShare = async () => {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const stream = await getUserMedia();
         const videoTrack = stream.getVideoTracks()[0];
 
-        const sender = peerConnectionRef.current.getSenders().find(sender => sender.track.kind === 'video');
-        sender.replaceTrack(videoTrack);
+        Object.values(peerConnectionsRef.current).forEach(peerConnection => {
+            const sender = peerConnection.getSenders().find(sender => sender.track.kind === 'video');
+            sender.replaceTrack(videoTrack);
+        });
 
         setIsScreenSharing(false);
     };
 
+    useEffect(() => {
+        if (localVideoRef.current) {
+            localVideoRef.current.srcObject = localVideoRef.current.srcObject; // Set srcObject using ref
+        }
+    }, [localVideoRef]);
+
+    useEffect(() => {
+        remoteStreams.forEach((stream, index) => {
+            const videoElement = document.getElementById(`remoteVideo${index}`);
+            if (videoElement) {
+                videoElement.srcObject = stream;
+            }
+        });
+    }, [remoteStreams]);
+
     return (
         <div>
-            <div style={{border: '1px solid #ccc'}}>
+            <div>
                 <video ref={localVideoRef} autoPlay muted />
-                <video ref={remoteVideoRef} autoPlay />
+                {remoteStreams.map((stream, index) => (
+                    <video key={index} id={`remoteVideo${index}`} autoPlay />
+                ))}
             </div>
-            <button onClick={startCall} disabled={isCallStarted}>
+            <button onClick={() => setIsCallStarted(true)} disabled={isCallStarted}>
                 Start Call
             </button>
             <button onClick={toggleScreenShare}>

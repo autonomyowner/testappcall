@@ -188,7 +188,7 @@ const VideoChat = () => {
             </button>
             <div>
                 <h3>Chat</h3>
-                <div style={{ border: '1px solid #ccc', height: '200px', overflowY: 'scroll' }}>
+                <div style={{ border: '1px solid #ccc', height: '100px', overflowY: 'scroll' }}>
                     {chatMessages.map((msg, index) => (
                         <div key={index} style={{ textAlign: msg.fromSelf ? 'right' : 'left' }}>
                             <p style={{ margin: '5px' }}>{msg.text}</p>

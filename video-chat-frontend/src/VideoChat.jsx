@@ -42,10 +42,19 @@ const VideoChat = () => {
             setChatMessages(prevMessages => [...prevMessages, { text: message, fromSelf: false }]);
         };
 
+        const handleUserDisconnected = (userId) => {
+            if (peerConnectionsRef.current[userId]) {
+                peerConnectionsRef.current[userId].close();
+                delete peerConnectionsRef.current[userId];
+                setRemoteStreams(prevStreams => prevStreams.filter(stream => stream.id !== userId));
+            }
+        };
+
         socket.on('offer', handleReceiveOffer);
         socket.on('answer', handleReceiveAnswer);
         socket.on('candidate', handleReceiveCandidate);
         socket.on('chatMessage', handleReceiveChatMessage);
+        socket.on('userDisconnected', handleUserDisconnected);
 
         socket.emit('joinRoom');
         socket.on('allUsers', handleAllUsers);
@@ -55,6 +64,7 @@ const VideoChat = () => {
             socket.off('answer', handleReceiveAnswer);
             socket.off('candidate', handleReceiveCandidate);
             socket.off('chatMessage', handleReceiveChatMessage);
+            socket.off('userDisconnected', handleUserDisconnected);
             socket.off('allUsers', handleAllUsers);
         };
     }, []);
@@ -85,6 +95,18 @@ const VideoChat = () => {
                 socket.emit('candidate', { to: userId, candidate: event.candidate });
             }
         };
+
+        peerConnection.onconnectionstatechange = async () => {
+            if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
+                console.log(`Connection with ${userId} lost. Attempting to reconnect...`);
+                try {
+                    await peerConnection.restartIce();
+                } catch (error) {
+                    console.error('ICE restart failed:', error);
+                    handleUserDisconnected(userId);
+                }
+            }
+        };        
 
         peerConnectionsRef.current[userId] = peerConnection;
         return peerConnection;
@@ -188,7 +210,7 @@ const VideoChat = () => {
             </button>
             <div>
                 <h3>Chat</h3>
-                <div style={{ border: '1px solid #ccc', height: '100px', overflowY: 'scroll' }}>
+                <div style={{ border: '1px solid #ccc', height: '200px', overflowY: 'scroll' }}>
                     {chatMessages.map((msg, index) => (
                         <div key={index} style={{ textAlign: msg.fromSelf ? 'right' : 'left' }}>
                             <p style={{ margin: '5px' }}>{msg.text}</p>

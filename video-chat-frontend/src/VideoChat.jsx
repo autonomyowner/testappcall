@@ -263,13 +263,25 @@ const VideoChat = () => {
             Start Call
           </button>
           <button onClick={toggleAudio}>
-            {isAudioMuted ? "Unmute Audio" : "Mute Audio"}
+            {isAudioMuted ? (
+              <span class="material-symbols-outlined">mic</span>
+            ) : (
+              <span class="material-symbols-outlined">mic_off</span>
+            )}
           </button>
           <button onClick={toggleVideo}>
-            {isVideoOff ? "Turn Video On" : "Turn Video Off"}
+            {isVideoOff ? (
+              <span class="material-symbols-outlined">videocam</span>
+            ) : (
+              <span class="material-symbols-outlined">videocam_off</span>
+            )}
           </button>
           <button onClick={toggleScreenShare}>
-            {isScreenSharing ? "Stop Sharing Screen" : "Share Screen"}
+            {isScreenSharing ? (
+              <span class="material-symbols-outlined">stop_screen_share</span>
+            ) : (
+              <span class="material-symbols-outlined">screen_share</span>
+            )}
           </button>
         </div>
       </div>

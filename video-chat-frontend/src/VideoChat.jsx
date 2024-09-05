@@ -132,7 +132,31 @@ const VideoChat = () => {
     };
 
     peerConnectionsRef.current[userId] = peerConnection;
+
+    peerConnection.addEventListener("track", () => {
+      setVideoBandwidth(peerConnection, 500);
+    });
+
     return peerConnection;
+  };
+
+  const setVideoBandwidth = (peerConnection, maxBandwidth) => {
+    const sender = peerConnection
+      .getSenders()
+      .find((s) => s.track.kind === "video");
+    if (sender) {
+      const parameters = sender.getParameters();
+
+      if (!parameters.encodings) {
+        parameters.encodings = [{}];
+      }
+
+      parameters.encodings[0].maxBitrate = maxBandwidth * 1000;
+
+      sender
+        .setParameters(parameters)
+        .catch((err) => console.error("Error setting bandwidth:", err));
+    }
   };
 
   const handleAllUsers = async (users) => {
@@ -298,15 +322,36 @@ const VideoChat = () => {
           ))}
         </div>
         <div className="message-input">
-          <input
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && sendMessage()}
-            placeholder="Type your message..."
-            style={{ width: "80%" }}
-          />
-          <button onClick={sendMessage}>Send</button>
+          <div class="brutalist-container">
+            <input
+              class="brutalist-input smooth-type"
+              type="text"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyPress={(e) => e.key === "Enter" && sendMessage()}
+              placeholder="Type your message..."
+            />
+            <label class="brutalist-label">HAVE A MESSAGE??</label>
+          </div>
+          <button className="send" onClick={sendMessage}>
+            <div class="svg-wrapper-1">
+              <div class="svg-wrapper">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  width="24"
+                  height="24"
+                >
+                  <path fill="none" d="M0 0h24v24H0z"></path>
+                  <path
+                    fill="currentColor"
+                    d="M1.946 9.315c-.522-.174-.527-.455.01-.634l19.087-6.362c.529-.176.832.12.684.638l-5.454 19.086c-.15.529-.455.547-.679.045L12 14l6-8-8 6-8.054-2.685z"
+                  ></path>
+                </svg>
+              </div>
+            </div>
+            <span>Send</span>
+          </button>
         </div>
       </div>
     </div>

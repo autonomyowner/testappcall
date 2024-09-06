@@ -30,10 +30,20 @@ body {
 .videos {
   flex: 10;
   overflow-y: scroll;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 2fr));
+  gap: 10px;
   padding: 10px;
-  height: auto;
   width: 100%;
   border: 1px solid black;
+}
+
+.video-item {
+  width: 100%;
+  height: auto;
+  margin-bottom:20px;
+  border-radius: 10px;
+  overflow: hidden;
 }
 .controls {
   display: flex;
@@ -43,10 +53,10 @@ body {
   width: 100%;
   border: 1px solid black;
 }
-.controls button{
-    border: none;
-    background-color: transparent;
-    cursor: pointer;
+.controls button {
+  border: none;
+  background-color: transparent;
+  cursor: pointer;
 }
 .message-wrapper {
   display: flex;
@@ -74,7 +84,6 @@ body {
   justify-content: space-evenly;
   width: 100%;
 }
-
 
 .brutalist-container {
   position: relative;

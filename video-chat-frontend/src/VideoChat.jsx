@@ -274,9 +274,15 @@ const VideoChat = () => {
             ref={localVideoRef}
             autoPlay
             muted={!isCallStarted || isAudioMuted}
+            className="video-item"
           />
           {remoteStreams.map((stream, index) => (
-            <video key={index} id={`remoteVideo${index}`} autoPlay />
+            <video
+              key={index}
+              id={`remoteVideo${index}`}
+              autoPlay
+              className="video-item"
+            />
           ))}
         </div>
         <div className="controls">

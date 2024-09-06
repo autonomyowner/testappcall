@@ -5,54 +5,55 @@ const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
-
 app.use(cors());
 
 const io = socketIO(server, {
     cors: {
-        origin: "http://localhost:5173", // Your React app origin
+        origin: "http://localhost:5173", // Your React app URL
         methods: ["GET", "POST"],
-        allowedHeaders: ["Content-Type"],
         credentials: true
     }
 });
 
 const PORT = process.env.PORT || 5000;
 
+const users = {}; // Track users by socket ID
+
 io.on('connection', (socket) => {
-    socket.emit('me', socket.id)
+    console.log('New user connected:', socket.id);
 
-    // Join the user to a room (a room name can be anything, here we use "main")
-    socket.join("main");
+    socket.on('joinRoom', ({ username }) => {
+        users[socket.id] = username;
+        socket.join("main");
+        
+        // Notify the new user of all other users in the room
+        const usersInRoom = Object.keys(users).filter(id => id !== socket.id).map(id => ({
+            id: id,
+            username: users[id]
+        }));
+        socket.emit('allUsers', usersInRoom);
 
-    // Notify the new user of all other users in the room
-    const usersInRoom = Array.from(io.sockets.adapter.rooms.get("main") || []).filter(id => id !== socket.id);
-    socket.emit('allUsers', usersInRoom);
+        // Broadcast to others that a new user has joined
+        socket.broadcast.emit('newUser', { id: socket.id, username });
+    });
 
-    // Broadcast an offer to other users
     socket.on('offer', ({ to, offer }) => {
         socket.to(to).emit('offer', { from: socket.id, offer });
     });
 
-    // Broadcast an answer to other users
     socket.on('answer', ({ to, answer }) => {
         socket.to(to).emit('answer', { from: socket.id, answer });
     });
 
-    // Broadcast ICE candidates to other users
     socket.on('candidate', ({ to, candidate }) => {
         socket.to(to).emit('candidate', { from: socket.id, candidate });
     });
 
-    // Broadcast chat messages to other users
-    socket.on('chatMessage', (message) => {
-        socket.broadcast.emit('chatMessage', message);
-    });
-
-    // Handle when a user disconnects
     socket.on('disconnect', () => {
+        const username = users[socket.id];
+        delete users[socket.id];
+        socket.broadcast.emit('userDisconnected', { id: socket.id, username });
         console.log('User disconnected:', socket.id);
-        socket.broadcast.emit('userDisconnected', socket.id);
     });
 });
 

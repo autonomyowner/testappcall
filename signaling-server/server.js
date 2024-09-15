@@ -9,7 +9,7 @@ app.use(cors());
 
 const io = socketIO(server, {
     cors: {
-        origin: "http://localhost:5173", // Your React app URL
+        origin: "http://localhost:5173", 
         methods: ["GET", "POST"],
         credentials: true
     }

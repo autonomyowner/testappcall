@@ -10,7 +10,7 @@ const VideoChat = () => {
   const peerConnectionsRef = useRef({});
   const localStreamRef = useRef(null);
 
-  // Video/Call States
+  // Video/Call State
   const [remoteStreams, setRemoteStreams] = useState([]);
   const [isCallStarted, setIsCallStarted] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);

@@ -1,9 +1,14 @@
 import React from 'react';
 import VideoChat from './VideoChat';
 import './App.css';
+import ErrorBoundary from './ErrorBoundary';
 
 function App() {
-  return <VideoChat />;
+  return (
+    <ErrorBoundary>
+      <VideoChat />
+    </ErrorBoundary>
+  );
 }
 
 export default App;

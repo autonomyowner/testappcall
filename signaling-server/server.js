@@ -31,11 +31,27 @@ io.on('connection', (socket) => {
 
     // Join existing room
     socket.on('joinRoom', ({ roomId, username }) => {
+        console.log(`Join room attempt - Room: ${roomId}, User: ${username}`);
+        
+        if (!roomId || !username) {
+            console.error('Missing room ID or username');
+            socket.emit('error', { message: 'Invalid room ID or username' });
+            return;
+        }
+
         if (!rooms.has(roomId)) {
+            console.error(`Room not found: ${roomId}`);
             socket.emit('error', { message: 'Room not found' });
             return;
         }
-        joinRoom(socket, { roomId, username, isHost: false });
+
+        try {
+            joinRoom(socket, { roomId, username, isHost: false });
+            console.log(`User ${username} joined room ${roomId} successfully`);
+        } catch (error) {
+            console.error('Error joining room:', error);
+            socket.emit('error', { message: 'Failed to join room' });
+        }
     });
 
     // Handle WebRTC signaling

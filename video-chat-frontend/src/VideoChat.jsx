@@ -29,25 +29,60 @@ const VideoChat = () => {
   const [chatMessages, setChatMessages] = useState([]);
   const [message, setMessage] = useState("");
 
-  const getUserMedia = async (constraints = { video: true, audio: true }) => {
+  // Add this state
+  const [videoError, setVideoError] = useState(false);
+
+  const getUserMedia = async (constraints = { 
+    video: {
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      facingMode: 'user'
+    }, 
+    audio: true 
+  }) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      localStreamRef.current = stream;
-      
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
+      // First try to release any existing tracks
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
       }
 
-      Object.values(peerConnectionsRef.current).forEach(pc => {
-        stream.getTracks().forEach(track => {
-          pc.addTrack(track, stream);
+      // Try to get media with video first
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        localStreamRef.current = stream;
+        
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+        }
+        return stream;
+      } catch (videoError) {
+        console.error("Error with video:", videoError);
+        
+        // If video fails, try audio only
+        const audioOnlyStream = await navigator.mediaDevices.getUserMedia({ 
+          video: false, 
+          audio: true 
         });
-      });
-
-      return stream;
+        
+        localStreamRef.current = audioOnlyStream;
+        setVideoError(true);
+        setError("Camera not available. Continuing with audio only.");
+        return audioOnlyStream;
+      }
     } catch (error) {
       console.error("Error accessing media devices:", error);
-      setError(`Media Error: ${error.message}`);
+      
+      // Provide more specific error messages
+      let errorMessage = "Could not access media devices. ";
+      if (error.name === "NotReadableError") {
+        errorMessage += "Please ensure your camera is not being used by another application and try again.";
+      } else if (error.name === "NotAllowedError") {
+        errorMessage += "Please allow access to your camera and microphone.";
+      } else if (error.name === "NotFoundError") {
+        errorMessage += "No camera or microphone found.";
+      }
+      
+      setError(errorMessage);
       throw error;
     }
   };
@@ -110,8 +145,24 @@ const VideoChat = () => {
     }
   };
 
+  // Add this function to check permissions
+  const checkMediaPermissions = async () => {
+    try {
+      const permissions = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      permissions.getTracks().forEach(track => track.stop()); // Clean up test stream
+      return true;
+    } catch (error) {
+      console.error('Media permission error:', error);
+      setError('Please allow camera and microphone access');
+      return false;
+    }
+  };
+
   // Handle room joining
   const joinRoom = async (roomId, username) => {
+    const hasPermissions = await checkMediaPermissions();
+    if (!hasPermissions) return;
+    
     try {
       await getUserMedia();
       socket.emit('joinRoom', { roomId, username });
@@ -201,6 +252,10 @@ const VideoChat = () => {
 
     socket.on('chatMessage', (messageData) => {
       console.log('Received message:', messageData);
+      if (!messageData.text || !messageData.userId) {
+        console.error('Invalid message data:', messageData);
+        return;
+      }
       setChatMessages(prev => [...prev, messageData]);
     });
 
@@ -301,12 +356,18 @@ const VideoChat = () => {
   // Chat function
   const sendMessage = () => {
     if (message.trim() && roomId) {
-      const messageToSend = message.trim();
-      socket.emit('chatMessage', { 
-        roomId, 
-        message: messageToSend 
-      });
-      setMessage('');
+      try {
+        const messageToSend = message.trim();
+        console.log('Sending message:', { roomId, message: messageToSend });
+        socket.emit('chatMessage', { 
+          roomId, 
+          message: messageToSend 
+        });
+        setMessage('');
+      } catch (error) {
+        console.error('Error sending message:', error);
+        setError('Failed to send message');
+      }
     }
   };
 
@@ -320,21 +381,41 @@ const VideoChat = () => {
 
   // Add these functions to your VideoChat component
   const leaveCall = () => {
-    // Close all peer connections
-    Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
-    peerConnectionsRef.current = {};
-    
-    // Stop all local tracks
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
+    console.log('Leaving call...');
+    try {
+      // Close and cleanup peer connections
+      Object.entries(peerConnectionsRef.current).forEach(([userId, pc]) => {
+        console.log(`Closing connection with ${userId}`);
+        pc.close();
+      });
+      peerConnectionsRef.current = {};
+      
+      // Stop all local tracks
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => {
+          track.stop();
+          console.log(`Stopped track: ${track.kind}`);
+        });
+      }
+      
+      // Clear video elements
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
+      }
+      
+      // Reset states
+      setRemoteStreams([]);
+      setIsCallStarted(false);
+      setIsJoined(false);
+      clearChat();
+      
+      // Notify server
+      socket.emit('leaveRoom', { roomId });
+      console.log('Left room:', roomId);
+    } catch (error) {
+      console.error('Error during call cleanup:', error);
+      setError('Failed to properly clean up call');
     }
-    
-    // Reset states
-    setRemoteStreams([]);
-    setIsCallStarted(false);
-    setIsJoined(false);
-    clearChat();
-    socket.emit('leaveRoom', { roomId });
   };
 
   const endCall = () => {
@@ -350,14 +431,101 @@ const VideoChat = () => {
     setChatMessages([]);
   };
 
+  // Add connection state logging
+  useEffect(() => {
+    const logConnectionState = () => {
+      Object.entries(peerConnectionsRef.current).forEach(([userId, pc]) => {
+        console.log(`Connection state with ${userId}:`, {
+          connectionState: pc.connectionState,
+          iceConnectionState: pc.iceConnectionState,
+          signalingState: pc.signalingState
+        });
+      });
+    };
+
+    const interval = setInterval(logConnectionState, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Add this useEffect to monitor video element and stream
+  useEffect(() => {
+    if (localVideoRef.current) {
+      console.log('Local video element:', {
+        srcObject: localVideoRef.current.srcObject,
+        readyState: localVideoRef.current.readyState,
+        videoWidth: localVideoRef.current.videoWidth,
+        videoHeight: localVideoRef.current.videoHeight,
+        paused: localVideoRef.current.paused
+      });
+    }
+    
+    if (localStreamRef.current) {
+      console.log('Local stream:', {
+        active: localStreamRef.current.active,
+        tracks: localStreamRef.current.getTracks().map(track => ({
+          kind: track.kind,
+          enabled: track.enabled,
+          muted: track.muted
+        }))
+      });
+    }
+  }, [localVideoRef.current?.srcObject]);
+
+  // Add this useEffect to monitor video track status
+  useEffect(() => {
+    const checkVideoTrack = () => {
+      if (localStreamRef.current) {
+        const videoTrack = localStreamRef.current.getVideoTracks()[0];
+        if (videoTrack) {
+          console.log('Video track status:', {
+            enabled: videoTrack.enabled,
+            muted: videoTrack.muted,
+            readyState: videoTrack.readyState,
+            constraints: videoTrack.getConstraints(),
+            settings: videoTrack.getSettings()
+          });
+        } else {
+          console.error('No video track found');
+        }
+      }
+    };
+
+    checkVideoTrack();
+    const interval = setInterval(checkVideoTrack, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Add a retry button to the error container
+  const ErrorContainer = ({ error, onRetry, onDismiss }) => (
+    <div className="error-container">
+      <h2>Error</h2>
+      <p>{error}</p>
+      <div className="error-buttons">
+        <button onClick={onRetry}>Try Again</button>
+        <button onClick={onDismiss}>Continue Without Camera</button>
+      </div>
+    </div>
+  );
+
   // Render functions
   if (error) {
     return (
-      <div className="error-container">
-        <h2>Error</h2>
-        <p>{error}</p>
-        <button onClick={() => setError(null)}>Dismiss</button>
-      </div>
+      <ErrorContainer 
+        error={error}
+        onRetry={async () => {
+          setError(null);
+          setVideoError(false);
+          try {
+            await getUserMedia();
+          } catch (e) {
+            // Error will be handled by getUserMedia
+          }
+        }}
+        onDismiss={() => {
+          setError(null);
+          setVideoError(true);
+        }}
+      />
     );
   }
 
@@ -374,13 +542,32 @@ const VideoChat = () => {
       />
       <div className="video-wrapper">
         <div className={getVideoContainerClass()}>
-          <video
-            ref={localVideoRef}
-            autoPlay
-            playsInline
-            muted
-            className="video-item local"
-          />
+          {videoError ? (
+            <div className="video-error">
+              <span className="material-symbols-outlined">videocam_off</span>
+              <p>Camera not available</p>
+            </div>
+          ) : (
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className="video-item local"
+              style={{ transform: 'scaleX(-1)', objectFit: 'cover' }}
+              onLoadedMetadata={(e) => {
+                console.log('Video metadata loaded');
+                e.target.play().catch(err => {
+                  console.error('Play failed:', err);
+                  setVideoError(true);
+                });
+              }}
+              onError={(e) => {
+                console.error('Video error:', e);
+                setVideoError(true);
+              }}
+            />
+          )}
           {remoteStreams.map((stream, index) => (
             <video
               key={stream.id}

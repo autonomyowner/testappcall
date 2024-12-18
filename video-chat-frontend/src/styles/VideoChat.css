@@ -23,14 +23,16 @@
   gap: 1rem;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   grid-auto-rows: minmax(200px, auto);
-  aspect-ratio: 16/9;
-  overflow-y: auto;
+  width: 100%;
+  height: 100%;
   padding: 0.5rem;
+  overflow: hidden;
 }
 
 /* Adjust grid based on participant count */
 .videos.single {
   grid-template-columns: 1fr;
+  place-items: center;
 }
 
 .videos.pair {
@@ -46,9 +48,11 @@
   height: 100%;
   object-fit: cover;
   border-radius: 12px;
-  background: #2a2a2a;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  transition: transform 0.3s ease;
+  background: #000;
+  min-height: 200px;
+  min-width: 200px;
+  display: block;
+  position: relative;
 }
 
 .video-item:hover {
@@ -57,6 +61,7 @@
 
 .video-item.local {
   border: 2px solid #007bff;
+  z-index: 1;
 }
 
 .controls {
@@ -302,26 +307,61 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background: rgba(255, 68, 68, 0.9);
+  background: rgba(0, 0, 0, 0.9);
   padding: 2rem;
   border-radius: 12px;
   text-align: center;
   backdrop-filter: blur(10px);
   z-index: 2000;
+  color: white;
+  max-width: 400px;
+  width: 90%;
 }
 
-.error-container button {
-  margin-top: 1rem;
-  padding: 0.5rem 1rem;
+.error-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
+.error-buttons button {
+  padding: 0.8rem 1.5rem;
   border: none;
   border-radius: 6px;
-  background: white;
-  color: #ff4444;
   cursor: pointer;
   transition: all 0.3s ease;
 }
 
-.error-container button:hover {
+.error-buttons button:first-child {
+  background: #007bff;
+  color: white;
+}
+
+.error-buttons button:last-child {
+  background: #6c757d;
+  color: white;
+}
+
+.error-buttons button:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.video-error {
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+  background: #2a2a2a;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+
+.video-error .material-symbols-outlined {
+  font-size: 48px;
+  margin-bottom: 1rem;
 } 

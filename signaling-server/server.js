@@ -46,6 +46,7 @@ io.on('connection', (socket) => {
         }
 
         try {
+            // Join the room
             joinRoom(socket, { roomId, username, isHost: false });
             console.log(`User ${username} joined room ${roomId} successfully`);
         } catch (error) {
@@ -137,6 +138,8 @@ function generateRoomId() {
 }
 
 function joinRoom(socket, { roomId, username, isHost }) {
+    console.log('Joining room:', { roomId, username, isHost });
+
     // Create room if it doesn't exist
     if (!rooms.has(roomId)) {
         rooms.set(roomId, new Set());
@@ -158,6 +161,8 @@ function joinRoom(socket, { roomId, username, isHost }) {
     const usersInRoom = Array.from(rooms.get(roomId))
         .map(id => users.get(id))
         .filter(user => user && user.id !== socket.id);
+
+    console.log('Users in room:', usersInRoom);
 
     // Send room info to the new user
     socket.emit('roomJoined', {

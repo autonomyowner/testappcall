@@ -160,13 +160,24 @@ const VideoChat = () => {
 
   // Handle room joining
   const joinRoom = async (roomId, username) => {
-    const hasPermissions = await checkMediaPermissions();
-    if (!hasPermissions) return;
-    
     try {
-      await getUserMedia();
+      console.log('Attempting to join room:', { roomId, username }); // Debug log
+      
+      // Get media permissions first
+      const stream = await getUserMedia();
+      if (!stream) {
+        console.error('Failed to get media stream');
+        return;
+      }
+
+      // Emit join room event
       socket.emit('joinRoom', { roomId, username });
+      
+      // Set connection status to connecting
+      setConnectionStatus('connecting');
+      
     } catch (error) {
+      console.error('Join room error:', error);
       setError(`Failed to join room: ${error.message}`);
     }
   };
@@ -268,6 +279,12 @@ const VideoChat = () => {
       leaveCall();
     });
 
+    socket.on('error', ({ message }) => {
+      console.error('Socket error:', message);
+      setError(message);
+      setConnectionStatus('disconnected');
+    });
+
     return () => {
       socket.off('roomCreated');
       socket.off('roomJoined');
@@ -277,6 +294,7 @@ const VideoChat = () => {
       socket.off('chatMessage');
       socket.off('userLeft');
       socket.off('callEnded');
+      socket.off('error');
     };
   }, [createPeerConnection]);
 

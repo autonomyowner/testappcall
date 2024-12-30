@@ -11,6 +11,7 @@ const RoomJoin = ({ onJoinRoom, onCreateRoom }) => {
         const finalUsername = username.trim() || `User_${Math.floor(Math.random() * 1000)}`;
         
         if (isCreating) {
+            console.log('Creating room with username:', finalUsername);
             onCreateRoom(finalUsername);
         } else {
             const finalRoomId = roomId.trim();
@@ -18,6 +19,7 @@ const RoomJoin = ({ onJoinRoom, onCreateRoom }) => {
                 alert('Please enter a Room ID to join');
                 return;
             }
+            console.log('Joining room:', { roomId: finalRoomId, username: finalUsername });
             onJoinRoom(finalRoomId, finalUsername);
         }
     };

@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from "react";
 import socket from "./socket";
 import RoomJoin from './components/RoomJoin';
 import ConnectionStatus from './components/ConnectionStatus';
+import ParticipantList from './components/ParticipantList';
 import './styles/VideoChat.css';
 
 const VideoChat = () => {
@@ -31,6 +32,10 @@ const VideoChat = () => {
 
   // Add this state
   const [videoError, setVideoError] = useState(false);
+
+  // Add these new states with your existing states
+  const [activeSpeaker, setActiveSpeaker] = useState(null);
+  const [showParticipants, setShowParticipants] = useState(true);
 
   const getUserMedia = async (constraints = { 
     video: {
@@ -285,6 +290,10 @@ const VideoChat = () => {
       setConnectionStatus('disconnected');
     });
 
+    socket.on('userSpeaking', ({ userId, speaking }) => {
+      handleSpeakingStateChange(userId, speaking);
+    });
+
     return () => {
       socket.off('roomCreated');
       socket.off('roomJoined');
@@ -295,6 +304,7 @@ const VideoChat = () => {
       socket.off('userLeft');
       socket.off('callEnded');
       socket.off('error');
+      socket.off('userSpeaking');
     };
   }, [createPeerConnection]);
 
@@ -525,6 +535,55 @@ const VideoChat = () => {
     </div>
   );
 
+  // Add this function to detect active speaker
+  const handleSpeakingStateChange = useCallback((userId, speaking) => {
+    if (speaking) {
+      setActiveSpeaker(userId);
+      // Reset active speaker after 2 seconds of silence
+      setTimeout(() => {
+        setActiveSpeaker(prev => prev === userId ? null : prev);
+      }, 2000);
+    }
+  }, []);
+
+  // Add this useEffect for audio analysis
+  useEffect(() => {
+    if (localStreamRef.current) {
+      const audioContext = new AudioContext();
+      const audioSource = audioContext.createMediaStreamSource(localStreamRef.current);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.minDecibels = -70;
+      analyser.maxDecibels = -10;
+      analyser.smoothingTimeConstant = 0.4;
+      
+      audioSource.connect(analyser);
+      
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      let speakingTimeout;
+      
+      const checkAudioLevel = () => {
+        if (audioContext.state === 'closed') return;
+        
+        analyser.getByteFrequencyData(dataArray);
+        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+        
+        if (average > 20) { // Adjust threshold as needed
+          handleSpeakingStateChange(socket.id, true);
+        }
+        
+        requestAnimationFrame(checkAudioLevel);
+      };
+      
+      checkAudioLevel();
+      
+      return () => {
+        audioContext.close();
+        clearTimeout(speakingTimeout);
+      };
+    }
+  }, [localStreamRef.current]);
+
   // Render functions
   if (error) {
     return (
@@ -553,6 +612,14 @@ const VideoChat = () => {
 
   return (
     <div className="container">
+      {showParticipants && (
+        <ParticipantList
+          participants={participants}
+          activeParticipant={activeSpeaker}
+          localUser={{ id: socket.id, isHost }}
+          showParticipants={showParticipants}
+        />
+      )}
       <ConnectionStatus 
         status={connectionStatus}
         roomId={roomId}
@@ -632,6 +699,14 @@ const VideoChat = () => {
               <span className="material-symbols-outlined">logout</span>
             </button>
           )}
+          <button 
+            onClick={() => setShowParticipants(!showParticipants)}
+            className="participant-toggle"
+          >
+            <span className="material-symbols-outlined">
+              {showParticipants ? 'person_off' : 'people'}
+            </span>
+          </button>
         </div>
       </div>
       <div className="message-wrapper">

@@ -130,6 +130,14 @@ io.on('connection', (socket) => {
             }
         }
     });
+
+    // Add this to your existing socket.on('connection') handler
+    socket.on('speaking', ({ roomId, speaking }) => {
+        socket.to(roomId).emit('userSpeaking', {
+            userId: socket.id,
+            speaking
+        });
+    });
 });
 
 // Helper functions

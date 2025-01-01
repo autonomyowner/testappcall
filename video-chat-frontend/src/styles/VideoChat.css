@@ -13,28 +13,29 @@
 .video-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  height: 100%;
+  height: calc(100vh - 2rem);
   position: relative;
-  overflow: hidden;
+  padding: 1rem;
 }
 
 .videos {
   flex: 1;
   display: grid;
   gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  grid-auto-rows: minmax(200px, auto);
-  width: auto;
-  height: 100%;
-  padding: 0.5rem;
-  overflow: hidden;
+  width: 100%;
+  height: calc(100% - 80px); /* Account for controls height */
 }
 
-/* Adjust grid based on participant count */
+/* Simple grid layouts */
 .videos.single {
   grid-template-columns: 1fr;
   place-items: center;
+}
+
+.videos.single .video-item {
+  max-width: 900px;
+  width: 100%;
+  aspect-ratio: 16/9;
 }
 
 .videos.pair {
@@ -42,7 +43,8 @@
 }
 
 .videos.multiple {
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  grid-auto-rows: 300px;
 }
 
 .video-item {
@@ -51,19 +53,45 @@
   object-fit: cover;
   border-radius: 12px;
   background: #000;
-  min-height: 200px;
-  min-width: 200px;
-  display: block;
-  position: relative;
-}
-
-.video-item:hover {
-  transform: scale(1.02);
+  transition: transform 0.2s ease;
 }
 
 .video-item.local {
   border: 2px solid #007bff;
-  z-index: 1;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+  .videos.multiple {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .video-wrapper {
+    padding: 0.5rem;
+  }
+
+  .videos {
+    gap: 0.5rem;
+  }
+
+  .videos.pair {
+    grid-template-columns: 1fr;
+  }
+
+  .videos.multiple {
+    grid-template-columns: 1fr;
+    grid-auto-rows: 250px;
+  }
+
+  .videos.single .video-item {
+    aspect-ratio: 4/3;
+  }
+}
+
+.video-item:hover {
+  transform: scale(1.02);
 }
 
 .controls {

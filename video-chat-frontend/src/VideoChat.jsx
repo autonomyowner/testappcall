@@ -37,6 +37,9 @@ const VideoChat = () => {
   const [activeSpeaker, setActiveSpeaker] = useState(null);
   const [showParticipants, setShowParticipants] = useState(true);
 
+  // First, add a new state to track remote video states
+  const [remoteVideoStates, setRemoteVideoStates] = useState({});
+
   const getUserMedia = async (constraints = { 
     video: {
       width: { ideal: 1280 },
@@ -104,14 +107,45 @@ const VideoChat = () => {
       const peerConnection = new RTCPeerConnection(configuration);
 
       peerConnection.ontrack = (event) => {
-        console.log('Received remote track:', event.streams[0]);
+        console.log('Received remote track:', {
+          stream: event.streams[0],
+          streamId: event.streams[0]?.id,
+          track: event.track,
+          userId
+        });
+        
         setRemoteStreams((prevStreams) => {
+          const newStream = event.streams[0];
+          // Create a new object with both stream and user info
+          const streamInfo = {
+            stream: newStream,
+            userId: userId,
+            id: newStream.id
+          };
+          
           const existingStream = prevStreams.find(
-            (stream) => stream.id === event.streams[0].id
+            (s) => s.userId === userId
           );
           if (existingStream) return prevStreams;
-          return [...prevStreams, event.streams[0]];
+          return [...prevStreams, streamInfo];
         });
+
+        // Listen for track mute/unmute events
+        event.track.onmute = () => {
+          console.log('Track muted:', userId);
+          setRemoteVideoStates(prev => ({
+            ...prev,
+            [userId]: true
+          }));
+        };
+
+        event.track.onunmute = () => {
+          console.log('Track unmuted:', userId);
+          setRemoteVideoStates(prev => ({
+            ...prev,
+            [userId]: false
+          }));
+        };
       };
 
       peerConnection.onicecandidate = (event) => {
@@ -294,6 +328,22 @@ const VideoChat = () => {
       handleSpeakingStateChange(userId, speaking);
     });
 
+    socket.on('videoStateChanged', ({ userId, isVideoOff }) => {
+      console.log('Remote video state changed:', userId, isVideoOff);
+      setRemoteVideoStates(prev => ({
+        ...prev,
+        [userId]: isVideoOff
+      }));
+    });
+
+    socket.on('userJoined', ({ user }) => {
+      // Initialize video state for new user
+      setRemoteVideoStates(prev => ({
+        ...prev,
+        [user.id]: false
+      }));
+    });
+
     return () => {
       socket.off('roomCreated');
       socket.off('roomJoined');
@@ -305,6 +355,8 @@ const VideoChat = () => {
       socket.off('callEnded');
       socket.off('error');
       socket.off('userSpeaking');
+      socket.off('videoStateChanged');
+      socket.off('userJoined');
     };
   }, [createPeerConnection]);
 
@@ -313,8 +365,13 @@ const VideoChat = () => {
     if (peerConnectionsRef.current[userId]) {
       peerConnectionsRef.current[userId].close();
       delete peerConnectionsRef.current[userId];
-      setRemoteStreams(prev => prev.filter(stream => stream.id !== userId));
+      setRemoteStreams(prev => prev.filter(streamInfo => streamInfo.userId !== userId));
       setParticipants(prev => prev.filter(p => p.id !== userId));
+      setRemoteVideoStates(prev => {
+        const newStates = { ...prev };
+        delete newStates[userId];
+        return newStates;
+      });
     }
   };
 
@@ -334,6 +391,12 @@ const VideoChat = () => {
         track.enabled = !track.enabled;
       });
       setIsVideoOff(!isVideoOff);
+      
+      // Notify other participants about video state change
+      socket.emit('videoStateChange', { 
+        roomId, 
+        isVideoOff: !isVideoOff 
+      });
     }
   };
 
@@ -627,10 +690,16 @@ const VideoChat = () => {
       />
       <div className="video-wrapper">
         <div className={getVideoContainerClass()}>
-          {videoError || isVideoOff ? (
+          {/* Local Video */}
+          {videoError ? (
             <div className="video-error">
-              <span className="material-symbols-outlined">videocam_off</span>
+              <span className="material-symbols-outlined">error</span>
               <p>Camera not available</p>
+            </div>
+          ) : isVideoOff ? (
+            <div className="video-error local">
+              <span className="material-symbols-outlined">videocam_off</span>
+              <p>Camera turned off</p>
             </div>
           ) : (
             <video
@@ -653,25 +722,31 @@ const VideoChat = () => {
               }}
             />
           )}
-          {remoteStreams.map((stream, index) => (
-            isVideoOff ? (
-              <div key={stream.id} className="video-error">
-                <span className="material-symbols-outlined">videocam_off</span>
-                <p>Camera not available</p>
+
+          {/* Remote Videos */}
+          {remoteStreams.map((streamInfo) => (
+            <div key={streamInfo.userId} className="video-container">
+              {remoteVideoStates[streamInfo.userId] ? (
+                <div className="video-error">
+                  <span className="material-symbols-outlined">videocam_off</span>
+                  <p>Camera turned off</p>
+                </div>
+              ) : (
+                <video
+                  autoPlay
+                  playsInline
+                  className="video-item"
+                  ref={el => {
+                    if (el) {
+                      el.srcObject = streamInfo.stream;
+                    }
+                  }}
+                />
+              )}
+              <div className="participant-name">
+                {participants.find(p => p.id === streamInfo.userId)?.username || 'Participant'}
               </div>
-            ) : (
-              <video
-                key={stream.id}
-                autoPlay
-                playsInline
-                className="video-item"
-                ref={el => {
-                  if (el) {
-                    el.srcObject = stream;
-                  }
-                }}
-              />
-            )
+            </div>
           ))}
         </div>
         <div className="controls">

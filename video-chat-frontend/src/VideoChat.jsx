@@ -627,7 +627,7 @@ const VideoChat = () => {
       />
       <div className="video-wrapper">
         <div className={getVideoContainerClass()}>
-          {videoError ? (
+          {videoError || isVideoOff ? (
             <div className="video-error">
               <span className="material-symbols-outlined">videocam_off</span>
               <p>Camera not available</p>
@@ -654,17 +654,24 @@ const VideoChat = () => {
             />
           )}
           {remoteStreams.map((stream, index) => (
-            <video
-              key={stream.id}
-              autoPlay
-              playsInline
-              className="video-item"
-              ref={el => {
-                if (el) {
-                  el.srcObject = stream;
-                }
-              }}
-            />
+            isVideoOff ? (
+              <div key={stream.id} className="video-error">
+                <span className="material-symbols-outlined">videocam_off</span>
+                <p>Camera not available</p>
+              </div>
+            ) : (
+              <video
+                key={stream.id}
+                autoPlay
+                playsInline
+                className="video-item"
+                ref={el => {
+                  if (el) {
+                    el.srcObject = stream;
+                  }
+                }}
+              />
+            )
           ))}
         </div>
         <div className="controls">

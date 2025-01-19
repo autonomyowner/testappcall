@@ -1,37 +1,35 @@
-// Add this to your socket.io event handlers
+// Let everyone know when I turn my camera on/off
 socket.on('videoStateChange', ({ roomId, isVideoOff }) => {
-  // Broadcast to all users in the room except sender
   socket.to(roomId).emit('videoStateChanged', {
     userId: socket.id,
     isVideoOff
   });
 });
 
-// When a user joins, notify others of their initial video state
+// Handle when someone wants to join my room
 socket.on('joinRoom', ({ roomId, username }) => {
-  // Create user object
+  // Add them to my room
   const user = {
     id: socket.id,
     username,
     isVideoOff: false
   };
   
-  // Add user to room
   if (!rooms[roomId]) {
     rooms[roomId] = [];
   }
   rooms[roomId].push(user);
   
-  // Join socket room
+  // Put them in the socket room
   socket.join(roomId);
   
-  // Notify others about the new user
+  // Tell others someone new joined
   socket.to(roomId).emit('userJoined', { user });
   
-  // Send room info back to the user
+  // Let them know they're in
   socket.emit('roomJoined', {
     roomId,
     users: rooms[roomId],
-    isHost: rooms[roomId].length === 1
+    isHost: rooms[roomId].length === 1  // First person is the host
   });
 }); 

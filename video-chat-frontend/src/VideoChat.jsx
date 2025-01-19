@@ -6,19 +6,19 @@ import ParticipantList from './components/ParticipantList';
 import './styles/VideoChat.css';
 
 const VideoChat = () => {
-  // Refs
+  // My refs for video elements and connections
   const localVideoRef = useRef(null);
   const peerConnectionsRef = useRef({});
   const localStreamRef = useRef(null);
 
-  // Video/Call State
+  // States to manage my video chat
   const [remoteStreams, setRemoteStreams] = useState([]);
   const [isCallStarted, setIsCallStarted] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
 
-  // Room States
+  // Need these for room management
   const [roomId, setRoomId] = useState(null);
   const [isHost, setIsHost] = useState(false);
   const [participants, setParticipants] = useState([]);
@@ -40,6 +40,7 @@ const VideoChat = () => {
   // First, add a new state to track remote video states
   const [remoteVideoStates, setRemoteVideoStates] = useState({});
 
+  // Function to get my camera and mic
   const getUserMedia = async (constraints = { 
     video: {
       width: { ideal: 1280 },
@@ -49,15 +50,12 @@ const VideoChat = () => {
     audio: true 
   }) => {
     try {
-      // Release existing tracks
+      // Stop any existing streams first
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => {
-          track.stop();
-          console.log('Stopped existing track:', track.kind);
-        });
+        localStreamRef.current.getTracks().forEach(track => track.stop());
       }
 
-      // Try video + audio first
+      // Try to get both video and audio
       try {
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         if (!stream) throw new Error('No stream received');
@@ -69,9 +67,7 @@ const VideoChat = () => {
         }
         return stream;
       } catch (videoError) {
-        console.warn("Video failed, falling back to audio only:", videoError);
-        
-        // Try audio only as fallback
+        // If video fails, try audio only
         const audioOnlyStream = await navigator.mediaDevices.getUserMedia({ 
           video: false, 
           audio: true 
@@ -81,25 +77,25 @@ const VideoChat = () => {
         
         localStreamRef.current = audioOnlyStream;
         setVideoError(true);
-        setError("Camera not available. Using audio only.");
+        setError("My camera isn't working, using audio only");
         return audioOnlyStream;
       }
     } catch (error) {
       console.error("Media access error:", error);
-      let errorMessage = "Media access failed: ";
+      let errorMessage = "Can't access my camera/mic: ";
       
       switch (error.name) {
         case "NotReadableError":
-          errorMessage += "Camera/mic is in use by another application.";
+          errorMessage += "Another app is using my camera/mic";
           break;
         case "NotAllowedError":
-          errorMessage += "Please allow camera/microphone access.";
+          errorMessage += "Need permission to use camera/mic";
           break;
         case "NotFoundError":
-          errorMessage += "No camera/microphone found.";
+          errorMessage += "Can't find my camera/mic";
           break;
         default:
-          errorMessage += error.message || "Unknown error";
+          errorMessage += error.message || "Something went wrong";
       }
       
       setError(errorMessage);
@@ -107,6 +103,7 @@ const VideoChat = () => {
     }
   };
 
+  // Setup connection with another user
   const createPeerConnection = useCallback((userId) => {
     try {
       console.log('Creating peer connection for:', userId);
@@ -479,7 +476,7 @@ const VideoChat = () => {
     };
   }, [isHost, initiateCall]);
 
-  // Handle user disconnection
+  // Clean up when I leave or someone else leaves
   const handleUserDisconnected = (userId) => {
     if (!userId) {
       console.error('Invalid userId for disconnection');
@@ -504,7 +501,7 @@ const VideoChat = () => {
     });
   };
 
-  // Media control functions
+  // My controls for video/audio
   const toggleAudio = () => {
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach(track => {
@@ -521,7 +518,7 @@ const VideoChat = () => {
       });
       setIsVideoOff(!isVideoOff);
       
-      // Notify other participants about video state change
+      // Let others know I turned my camera off/on
       socket.emit('videoStateChange', { 
         roomId, 
         isVideoOff: !isVideoOff 
@@ -529,7 +526,7 @@ const VideoChat = () => {
     }
   };
 
-  // Screen sharing functions
+  // Let me share my screen
   const toggleScreenShare = async () => {
     if (isScreenSharing) {
       await stopScreenShare();

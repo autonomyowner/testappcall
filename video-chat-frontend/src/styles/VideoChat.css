@@ -1,6 +1,7 @@
+/* My main container layout */
 .container {
   display: grid;
-  grid-template-columns: 1fr 400px; /* Main content and chat sidebar */
+  grid-template-columns: 1fr 400px; /* Main video area and chat sidebar */
   grid-template-rows: 1fr;
   background: #1a1a1a;
   color: white;
@@ -10,12 +11,51 @@
   position: relative;
 }
 
+/* My video layout styles */
 .video-wrapper {
   display: flex;
   flex-direction: column;
   height: calc(100vh - 2rem);
   position: relative;
   padding: 1rem;
+}
+
+/* Different layouts depending on participant count */
+.videos.single {
+  grid-template-columns: 1fr;
+  place-items: center;
+}
+
+.videos.pair {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/* My control buttons */
+.controls {
+  position: absolute;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  z-index: 100;
+  width: fit-content;
+}
+
+/* My chat sidebar styles */
+.message-wrapper {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  backdrop-filter: blur(10px);
+  overflow: hidden;
 }
 
 .videos {
@@ -27,19 +67,10 @@
 }
 
 /* Simple grid layouts */
-.videos.single {
-  grid-template-columns: 1fr;
-  place-items: center;
-}
-
 .videos.single .video-item {
   max-width: 900px;
   width: 100%;
   aspect-ratio: 16/9;
-}
-
-.videos.pair {
-  grid-template-columns: repeat(2, 1fr);
 }
 
 .videos.multiple {
@@ -90,22 +121,6 @@
 
 .video-item:hover {
   transform: scale(1.02);
-}
-
-.controls {
-  position: absolute;
-  bottom: 2rem;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 1rem;
-  justify-content: center;
-  padding: 1rem;
-  background: rgba(0, 0, 0, 0.5);
-  border-radius: 12px;
-  backdrop-filter: blur(10px);
-  z-index: 100;
-  width: fit-content;
 }
 
 .control-separator {
@@ -168,17 +183,6 @@
 
 .end-call {
   animation: pulse 2s infinite;
-}
-
-/* Chat sidebar */
-.message-wrapper {
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  backdrop-filter: blur(10px);
-  overflow: hidden;
 }
 
 .message-wrapper h3 {

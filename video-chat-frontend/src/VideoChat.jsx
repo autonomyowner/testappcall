@@ -49,45 +49,57 @@ const VideoChat = () => {
     audio: true 
   }) => {
     try {
-      // First try to release any existing tracks
+      // Release existing tracks
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current.getTracks().forEach(track => {
+          track.stop();
+          console.log('Stopped existing track:', track.kind);
+        });
       }
 
-      // Try to get media with video first
+      // Try video + audio first
       try {
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        localStreamRef.current = stream;
+        if (!stream) throw new Error('No stream received');
         
+        localStreamRef.current = stream;
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
+          setVideoError(false);
         }
         return stream;
       } catch (videoError) {
-        console.error("Error with video:", videoError);
+        console.warn("Video failed, falling back to audio only:", videoError);
         
-        // If video fails, try audio only
+        // Try audio only as fallback
         const audioOnlyStream = await navigator.mediaDevices.getUserMedia({ 
           video: false, 
           audio: true 
         });
         
+        if (!audioOnlyStream) throw new Error('No audio stream received');
+        
         localStreamRef.current = audioOnlyStream;
         setVideoError(true);
-        setError("Camera not available. Continuing with audio only.");
+        setError("Camera not available. Using audio only.");
         return audioOnlyStream;
       }
     } catch (error) {
-      console.error("Error accessing media devices:", error);
+      console.error("Media access error:", error);
+      let errorMessage = "Media access failed: ";
       
-      // Provide more specific error messages
-      let errorMessage = "Could not access media devices. ";
-      if (error.name === "NotReadableError") {
-        errorMessage += "Please ensure your camera is not being used by another application and try again.";
-      } else if (error.name === "NotAllowedError") {
-        errorMessage += "Please allow access to your camera and microphone.";
-      } else if (error.name === "NotFoundError") {
-        errorMessage += "No camera or microphone found.";
+      switch (error.name) {
+        case "NotReadableError":
+          errorMessage += "Camera/mic is in use by another application.";
+          break;
+        case "NotAllowedError":
+          errorMessage += "Please allow camera/microphone access.";
+          break;
+        case "NotFoundError":
+          errorMessage += "No camera/microphone found.";
+          break;
+        default:
+          errorMessage += error.message || "Unknown error";
       }
       
       setError(errorMessage);
@@ -100,66 +112,82 @@ const VideoChat = () => {
       const configuration = {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' }
+        ],
+        iceCandidatePoolSize: 10
       };
 
       const peerConnection = new RTCPeerConnection(configuration);
 
+      // Improved track handling
       peerConnection.ontrack = (event) => {
+        if (!event.streams || !event.streams[0]) {
+          console.warn('Received track without stream');
+          return;
+        }
+
+        const newStream = event.streams[0];
         console.log('Received remote track:', {
-          stream: event.streams[0],
-          streamId: event.streams[0]?.id,
-          track: event.track,
+          streamId: newStream.id,
+          trackKind: event.track.kind,
           userId
         });
-        
-        setRemoteStreams((prevStreams) => {
-          const newStream = event.streams[0];
-          // Create a new object with both stream and user info
-          const streamInfo = {
+
+        setRemoteStreams(prevStreams => {
+          const exists = prevStreams.some(s => s.userId === userId);
+          if (exists) return prevStreams;
+
+          return [...prevStreams, {
             stream: newStream,
-            userId: userId,
+            userId,
             id: newStream.id
-          };
-          
-          const existingStream = prevStreams.find(
-            (s) => s.userId === userId
-          );
-          if (existingStream) return prevStreams;
-          return [...prevStreams, streamInfo];
+          }];
         });
 
-        // Listen for track mute/unmute events
+        // Track state monitoring
+        event.track.onended = () => {
+          console.log('Track ended:', userId);
+          handleTrackEnded(userId, event.track);
+        };
+
         event.track.onmute = () => {
           console.log('Track muted:', userId);
-          setRemoteVideoStates(prev => ({
-            ...prev,
-            [userId]: true
-          }));
+          setRemoteVideoStates(prev => ({...prev, [userId]: true}));
         };
 
         event.track.onunmute = () => {
           console.log('Track unmuted:', userId);
-          setRemoteVideoStates(prev => ({
-            ...prev,
-            [userId]: false
-          }));
+          setRemoteVideoStates(prev => ({...prev, [userId]: false}));
         };
       };
 
+      // Enhanced ICE handling
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          socket.emit("candidate", { 
-            to: userId, 
+          socket.emit("candidate", {
+            to: userId,
             candidate: event.candidate,
-            roomId 
+            roomId
           });
         }
       };
 
+      peerConnection.oniceconnectionstatechange = () => {
+        console.log(`ICE connection state (${userId}):`, peerConnection.iceConnectionState);
+        setConnectionStatus(peerConnection.iceConnectionState);
+        
+        if (peerConnection.iceConnectionState === 'failed') {
+          console.log('Attempting ICE restart...');
+          peerConnection.restartIce();
+        }
+      };
+
+      // Connection state monitoring
       peerConnection.onconnectionstatechange = () => {
-        setConnectionStatus(peerConnection.connectionState);
+        console.log(`Connection state (${userId}):`, peerConnection.connectionState);
         if (peerConnection.connectionState === 'failed') {
           handleConnectionFailure(userId);
         }
@@ -168,11 +196,41 @@ const VideoChat = () => {
       peerConnectionsRef.current[userId] = peerConnection;
       return peerConnection;
     } catch (error) {
-      console.error("Error creating peer connection:", error);
+      console.error("Peer connection creation failed:", error);
       setError(`Connection Error: ${error.message}`);
       throw error;
     }
   }, [roomId]);
+
+  // Add connection failure handler
+  const handleConnectionFailure = useCallback((userId) => {
+    console.log('Handling connection failure for:', userId);
+    
+    // Clean up failed connection
+    if (peerConnectionsRef.current[userId]) {
+      peerConnectionsRef.current[userId].close();
+      delete peerConnectionsRef.current[userId];
+    }
+
+    // Remove failed streams
+    setRemoteStreams(prev => prev.filter(s => s.userId !== userId));
+    
+    // Attempt reconnection
+    setTimeout(() => {
+      if (isHost) {
+        console.log('Attempting reconnection...');
+        initiateCall(userId);
+      }
+    }, 2000);
+  }, [isHost]);
+
+  // Add track ended handler
+  const handleTrackEnded = useCallback((userId, track) => {
+    console.log(`Track ${track.kind} ended for user ${userId}`);
+    if (track.kind === 'video') {
+      setRemoteVideoStates(prev => ({...prev, [userId]: true}));
+    }
+  }, []);
 
   // Handle room creation
   const createRoom = async (username) => {
@@ -243,6 +301,10 @@ const VideoChat = () => {
   // Socket event handlers
   useEffect(() => {
     socket.on('roomCreated', ({ roomId }) => {
+      if (!roomId) {
+        console.error('No roomId received');
+        return;
+      }
       setRoomId(roomId);
       setIsHost(true);
       setConnectionStatus('connected');
@@ -253,16 +315,24 @@ const VideoChat = () => {
     });
 
     socket.on('roomJoined', ({ roomId, users, isHost }) => {
+      if (!roomId || !Array.isArray(users)) {
+        console.error('Invalid room data received:', { roomId, users });
+        return;
+      }
+
       setRoomId(roomId);
       setIsHost(isHost);
-      setParticipants(users);
+      setParticipants(users.filter(user => user && user.id)); // Filter out invalid users
       setConnectionStatus('connected');
       setIsJoined(true);
       clearChat();
 
+      // Only initiate calls for valid user objects
       users.forEach(user => {
-        if (!peerConnectionsRef.current[user.id]) {
-          initiateCall(user.id);
+        if (user && user.id && user.id !== socket.id) {
+          if (!peerConnectionsRef.current[user.id]) {
+            initiateCall(user.id);
+          }
         }
       });
     });
@@ -301,8 +371,7 @@ const VideoChat = () => {
     });
 
     socket.on('chatMessage', (messageData) => {
-      console.log('Received message:', messageData);
-      if (!messageData.text || !messageData.userId) {
+      if (!messageData || !messageData.userId) {
         console.error('Invalid message data:', messageData);
         return;
       }
@@ -310,6 +379,10 @@ const VideoChat = () => {
     });
 
     socket.on('userLeft', (user) => {
+      if (!user || !user.id) {
+        console.error('Invalid user data for disconnect:', user);
+        return;
+      }
       handleUserDisconnected(user.id);
     });
 
@@ -337,11 +410,23 @@ const VideoChat = () => {
     });
 
     socket.on('userJoined', ({ user }) => {
+      if (!user || !user.id) {
+        console.error('Invalid user data received:', user);
+        return;
+      }
+      
       // Initialize video state for new user
       setRemoteVideoStates(prev => ({
         ...prev,
         [user.id]: false
       }));
+
+      // Update participants list
+      setParticipants(prev => {
+        const exists = prev.some(p => p.id === user.id);
+        if (exists) return prev;
+        return [...prev, user];
+      });
     });
 
     return () => {
@@ -362,17 +447,27 @@ const VideoChat = () => {
 
   // Handle user disconnection
   const handleUserDisconnected = (userId) => {
-    if (peerConnectionsRef.current[userId]) {
-      peerConnectionsRef.current[userId].close();
-      delete peerConnectionsRef.current[userId];
-      setRemoteStreams(prev => prev.filter(streamInfo => streamInfo.userId !== userId));
-      setParticipants(prev => prev.filter(p => p.id !== userId));
-      setRemoteVideoStates(prev => {
-        const newStates = { ...prev };
-        delete newStates[userId];
-        return newStates;
-      });
+    if (!userId) {
+      console.error('Invalid userId for disconnection');
+      return;
     }
+
+    cleanupPeerConnection(userId);
+    
+    setRemoteStreams(prev => prev.filter(streamInfo => 
+      streamInfo && streamInfo.userId && streamInfo.userId !== userId
+    ));
+    
+    setParticipants(prev => prev.filter(p => 
+      p && p.id && p.id !== userId
+    ));
+    
+    setRemoteVideoStates(prev => {
+      if (!prev) return {};
+      const newStates = { ...prev };
+      delete newStates[userId];
+      return newStates;
+    });
   };
 
   // Media control functions
@@ -647,6 +742,67 @@ const VideoChat = () => {
     }
   }, [localStreamRef.current]);
 
+  // Update ParticipantList rendering with null checks
+  const renderParticipantList = () => {
+    if (!Array.isArray(participants)) return null;
+
+    return (
+      <ParticipantList
+        participants={participants.filter(p => p && p.id)} // Filter out invalid participants
+        activeParticipant={activeSpeaker}
+        localUser={socket?.id ? { id: socket.id, isHost } : null}
+        showParticipants={showParticipants}
+      />
+    );
+  };
+
+  // Update video rendering with null checks
+  const renderRemoteVideos = () => {
+    return remoteStreams.map((streamInfo) => {
+      if (!streamInfo || !streamInfo.userId) return null;
+
+      const participant = participants.find(p => p && p.id === streamInfo.userId);
+      const username = participant?.username || 'Participant';
+
+      return (
+        <div key={streamInfo.userId} className="video-container">
+          {remoteVideoStates[streamInfo.userId] ? (
+            <div className="video-error">
+              <span className="material-symbols-outlined">videocam_off</span>
+              <p>Camera turned off</p>
+            </div>
+          ) : (
+            <video
+              autoPlay
+              playsInline
+              className="video-item"
+              ref={el => {
+                if (el && streamInfo.stream) {
+                  el.srcObject = streamInfo.stream;
+                }
+              }}
+            />
+          )}
+          <div className="participant-name">{username}</div>
+        </div>
+      );
+    }).filter(Boolean); // Remove null entries
+  };
+
+  // Add socket connection status check
+  useEffect(() => {
+    const checkSocketConnection = () => {
+      if (!socket || !socket.connected) {
+        console.error('Socket disconnected');
+        setError('Connection lost. Please refresh the page.');
+        setConnectionStatus('disconnected');
+      }
+    };
+
+    const interval = setInterval(checkSocketConnection, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Render functions
   if (error) {
     return (
@@ -675,14 +831,7 @@ const VideoChat = () => {
 
   return (
     <div className="container">
-      {showParticipants && (
-        <ParticipantList
-          participants={participants}
-          activeParticipant={activeSpeaker}
-          localUser={{ id: socket.id, isHost }}
-          showParticipants={showParticipants}
-        />
-      )}
+      {showParticipants && renderParticipantList()}
       <ConnectionStatus 
         status={connectionStatus}
         roomId={roomId}
@@ -724,30 +873,7 @@ const VideoChat = () => {
           )}
 
           {/* Remote Videos */}
-          {remoteStreams.map((streamInfo) => (
-            <div key={streamInfo.userId} className="video-container">
-              {remoteVideoStates[streamInfo.userId] ? (
-                <div className="video-error">
-                  <span className="material-symbols-outlined">videocam_off</span>
-                  <p>Camera turned off</p>
-                </div>
-              ) : (
-                <video
-                  autoPlay
-                  playsInline
-                  className="video-item"
-                  ref={el => {
-                    if (el) {
-                      el.srcObject = streamInfo.stream;
-                    }
-                  }}
-                />
-              )}
-              <div className="participant-name">
-                {participants.find(p => p.id === streamInfo.userId)?.username || 'Participant'}
-              </div>
-            </div>
-          ))}
+          {renderRemoteVideos()}
         </div>
         <div className="controls">
           <button onClick={toggleAudio}>

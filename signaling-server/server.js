@@ -24,18 +24,30 @@ io.on('connection', (socket) => {
 
     // Create or join a room
     socket.on('createRoom', ({ username }) => {
+        if (!socket.id || !username) {
+            socket.emit('error', { message: 'Invalid socket connection or username' });
+            return;
+        }
+
         const roomId = generateRoomId();
         joinRoom(socket, { roomId, username, isHost: true });
-        socket.emit('roomCreated', { roomId });
+        socket.emit('roomCreated', { 
+            roomId,
+            user: {
+                id: socket.id,
+                username,
+                isHost: true
+            }
+        });
     });
 
     // Join existing room
     socket.on('joinRoom', ({ roomId, username }) => {
-        console.log(`Join room attempt - Room: ${roomId}, User: ${username}`);
+        console.log(`Join room attempt - Room: ${roomId}, User: ${username}, SocketId: ${socket.id}`);
         
-        if (!roomId || !username) {
-            console.error('Missing room ID or username');
-            socket.emit('error', { message: 'Invalid room ID or username' });
+        if (!socket.id || !roomId || !username) {
+            console.error('Missing required data:', { socketId: socket.id, roomId, username });
+            socket.emit('error', { message: 'Invalid connection data' });
             return;
         }
 
@@ -48,7 +60,7 @@ io.on('connection', (socket) => {
         try {
             // Join the room
             joinRoom(socket, { roomId, username, isHost: false });
-            console.log(`User ${username} joined room ${roomId} successfully`);
+            console.log(`User ${username} (${socket.id}) joined room ${roomId} successfully`);
         } catch (error) {
             console.error('Error joining room:', error);
             socket.emit('error', { message: 'Failed to join room' });
@@ -56,31 +68,58 @@ io.on('connection', (socket) => {
     });
 
     // Handle WebRTC signaling
-    socket.on('offer', ({ to, offer }) => {
+    socket.on('offer', ({ to, offer, roomId }) => {
+        if (!socket.id || !to || !offer || !roomId) {
+            console.error('Invalid offer data');
+            return;
+        }
+
         const user = users.get(socket.id);
-        if (user) {
+        if (user && rooms.get(roomId)?.has(to)) {
             socket.to(to).emit('offer', {
                 from: socket.id,
                 offer,
-                username: user.username,
-                isHost: user.isHost
+                user: {
+                    id: socket.id,
+                    username: user.username,
+                    isHost: user.isHost
+                }
             });
         }
     });
 
-    socket.on('answer', ({ to, answer }) => {
+    socket.on('answer', ({ to, answer, roomId }) => {
+        if (!socket.id || !to || !answer || !roomId) {
+            console.error('Invalid answer data');
+            return;
+        }
+
         const user = users.get(socket.id);
-        if (user) {
+        if (user && rooms.get(roomId)?.has(to)) {
             socket.to(to).emit('answer', {
                 from: socket.id,
                 answer,
-                username: user.username
+                user: {
+                    id: socket.id,
+                    username: user.username,
+                    isHost: user.isHost
+                }
             });
         }
     });
 
-    socket.on('candidate', ({ to, candidate }) => {
-        socket.to(to).emit('candidate', { from: socket.id, candidate });
+    socket.on('candidate', ({ to, candidate, roomId }) => {
+        if (!socket.id || !to || !candidate || !roomId) {
+            console.error('Invalid candidate data');
+            return;
+        }
+
+        if (rooms.get(roomId)?.has(to)) {
+            socket.to(to).emit('candidate', {
+                from: socket.id,
+                candidate
+            });
+        }
     });
 
     // Handle chat messages
@@ -146,7 +185,11 @@ function generateRoomId() {
 }
 
 function joinRoom(socket, { roomId, username, isHost }) {
-    console.log('Joining room:', { roomId, username, isHost });
+    if (!socket.id || !roomId || !username) {
+        throw new Error('Missing required connection data');
+    }
+
+    console.log('Joining room:', { socketId: socket.id, roomId, username, isHost });
 
     // Create room if it doesn't exist
     if (!rooms.has(roomId)) {
@@ -158,12 +201,13 @@ function joinRoom(socket, { roomId, username, isHost }) {
     socket.join(roomId);
 
     // Store user details
-    users.set(socket.id, {
+    const userData = {
         id: socket.id,
         username,
         roomId,
         isHost
-    });
+    };
+    users.set(socket.id, userData);
 
     // Get all users in the room
     const usersInRoom = Array.from(rooms.get(roomId))
@@ -176,14 +220,13 @@ function joinRoom(socket, { roomId, username, isHost }) {
     socket.emit('roomJoined', {
         roomId,
         users: usersInRoom,
-        isHost
+        isHost,
+        user: userData
     });
 
     // Notify others in the room
     socket.to(roomId).emit('userJoined', {
-        id: socket.id,
-        username,
-        isHost
+        user: userData
     });
 }
 

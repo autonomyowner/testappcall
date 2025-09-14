@@ -1,14 +1,13 @@
 import React from 'react';
 import VideoChat from './VideoChat';
+import './App.css';
 import ErrorBoundary from './ErrorBoundary';
 
 function App() {
   return (
-    <div className="app-container">
-      <ErrorBoundary>
-        <VideoChat />
-      </ErrorBoundary>
-    </div>
+    <ErrorBoundary>
+      <VideoChat />
+    </ErrorBoundary>
   );
 }
 

@@ -1,0 +1,17 @@
+{
+  "name": "video-chat-webrtc",
+  "version": "1.0.0",
+  "description": "Real-time video chat application",
+  "main": "signaling-server/server.js",
+  "scripts": {
+    "start": "cd signaling-server && npm start",
+    "build": "cd video-chat-frontend && npm run build",
+    "install-all": "cd signaling-server && npm install && cd ../video-chat-frontend && npm install"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "keywords": ["video-chat", "webrtc", "socket.io", "react"],
+  "author": "Your Name",
+  "license": "MIT"
+}

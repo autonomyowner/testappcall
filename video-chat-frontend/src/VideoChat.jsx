@@ -3,7 +3,6 @@ import socket from "./socket";
 import RoomJoin from './components/RoomJoin';
 import ConnectionStatus from './components/ConnectionStatus';
 import ParticipantList from './components/ParticipantList';
-import './styles/VideoChat.css';
 
 const VideoChat = () => {
   // My refs for video elements and connections
@@ -233,23 +232,10 @@ const VideoChat = () => {
     }
   };
 
-  // Add this function to check permissions
-  const checkMediaPermissions = async () => {
-    try {
-      const permissions = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      permissions.getTracks().forEach(track => track.stop()); // Clean up test stream
-      return true;
-    } catch (error) {
-      console.error('Media permission error:', error);
-      setError('Please allow camera and microphone access');
-      return false;
-    }
-  };
-
   // Handle room joining
   const joinRoom = async (roomId, username) => {
     try {
-      console.log('Attempting to join room:', { roomId, username }); // Debug log
+      console.log('Attempting to join room:', { roomId, username });
       
       // Get media permissions first
       const stream = await getUserMedia();
@@ -648,82 +634,6 @@ const VideoChat = () => {
     setChatMessages([]);
   };
 
-  // Add connection state logging
-  useEffect(() => {
-    const logConnectionState = () => {
-      Object.entries(peerConnectionsRef.current).forEach(([userId, pc]) => {
-        console.log(`Connection state with ${userId}:`, {
-          connectionState: pc.connectionState,
-          iceConnectionState: pc.iceConnectionState,
-          signalingState: pc.signalingState
-        });
-      });
-    };
-
-    const interval = setInterval(logConnectionState, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Add this useEffect to monitor video element and stream
-  useEffect(() => {
-    if (localVideoRef.current) {
-      console.log('Local video element:', {
-        srcObject: localVideoRef.current.srcObject,
-        readyState: localVideoRef.current.readyState,
-        videoWidth: localVideoRef.current.videoWidth,
-        videoHeight: localVideoRef.current.videoHeight,
-        paused: localVideoRef.current.paused
-      });
-    }
-    
-    if (localStreamRef.current) {
-      console.log('Local stream:', {
-        active: localStreamRef.current.active,
-        tracks: localStreamRef.current.getTracks().map(track => ({
-          kind: track.kind,
-          enabled: track.enabled,
-          muted: track.muted
-        }))
-      });
-    }
-  }, [localVideoRef.current?.srcObject]);
-
-  // Add this useEffect to monitor video track status
-  useEffect(() => {
-    const checkVideoTrack = () => {
-      if (localStreamRef.current) {
-        const videoTrack = localStreamRef.current.getVideoTracks()[0];
-        if (videoTrack) {
-          console.log('Video track status:', {
-            enabled: videoTrack.enabled,
-            muted: videoTrack.muted,
-            readyState: videoTrack.readyState,
-            constraints: videoTrack.getConstraints(),
-            settings: videoTrack.getSettings()
-          });
-        } else {
-          console.error('No video track found');
-        }
-      }
-    };
-
-    checkVideoTrack();
-    const interval = setInterval(checkVideoTrack, 2000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Add a retry button to the error container
-  const ErrorContainer = ({ error, onRetry, onDismiss }) => (
-    <div className="error-container">
-      <h2>Error</h2>
-      <p>{error}</p>
-      <div className="error-buttons">
-        <button onClick={onRetry}>Try Again</button>
-        <button onClick={onDismiss}>Continue Without Camera</button>
-      </div>
-    </div>
-  );
-
   // Add this function to detect active speaker
   const handleSpeakingStateChange = useCallback((userId, speaking) => {
     if (speaking) {
@@ -734,44 +644,6 @@ const VideoChat = () => {
       }, 2000);
     }
   }, []);
-
-  // Add this useEffect for audio analysis
-  useEffect(() => {
-    if (localStreamRef.current) {
-      const audioContext = new AudioContext();
-      const audioSource = audioContext.createMediaStreamSource(localStreamRef.current);
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 512;
-      analyser.minDecibels = -70;
-      analyser.maxDecibels = -10;
-      analyser.smoothingTimeConstant = 0.4;
-      
-      audioSource.connect(analyser);
-      
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      let speakingTimeout;
-      
-      const checkAudioLevel = () => {
-        if (audioContext.state === 'closed') return;
-        
-        analyser.getByteFrequencyData(dataArray);
-        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-        
-        if (average > 20) { // Adjust threshold as needed
-          handleSpeakingStateChange(socket.id, true);
-        }
-        
-        requestAnimationFrame(checkAudioLevel);
-      };
-      
-      checkAudioLevel();
-      
-      return () => {
-        audioContext.close();
-        clearTimeout(speakingTimeout);
-      };
-    }
-  }, [localStreamRef.current]);
 
   // Update ParticipantList rendering with null checks
   const renderParticipantList = () => {
@@ -803,9 +675,9 @@ const VideoChat = () => {
       return (
         <div key={streamInfo.userId} className="video-container">
           {remoteVideoStates[streamInfo.userId] ? (
-            <div className="video-error">
-              <span className="material-symbols-outlined">videocam_off</span>
-              <p>Camera turned off</p>
+            <div className="video-placeholder">
+              <div className="placeholder-icon">📹</div>
+              <p className="participant-name">Camera Off</p>
             </div>
           ) : (
             <video
@@ -824,7 +696,7 @@ const VideoChat = () => {
                   }
                 }
               }}
-              className="video-item"
+              className="video-element"
               style={{ transform: 'scaleX(-1)' }}
               onLoadedMetadata={(e) => {
                 const video = e.target;
@@ -841,60 +713,6 @@ const VideoChat = () => {
       );
     }).filter(Boolean);
   };
-
-  // Add socket connection status check
-  useEffect(() => {
-    const checkSocketConnection = () => {
-      if (!socket || !socket.connected) {
-        console.error('Socket disconnected');
-        setError('Connection lost. Please refresh the page.');
-        setConnectionStatus('disconnected');
-      }
-    };
-
-    const interval = setInterval(checkSocketConnection, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Add cleanup for streams when component unmounts
-  useEffect(() => {
-    return () => {
-      // Stop all tracks in local stream
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
-      }
-      
-      // Stop all remote streams
-      remoteStreams.forEach(streamInfo => {
-        if (streamInfo.stream) {
-          streamInfo.stream.getTracks().forEach(track => track.stop());
-        }
-      });
-    };
-  }, []);
-
-  // Add a useEffect to handle automatic video playing
-  useEffect(() => {
-    const handleUserInteraction = () => {
-      const videos = document.querySelectorAll('video');
-      videos.forEach(video => {
-        if (video.paused) {
-          video.play().catch(err => {
-            console.warn('Play after user interaction failed:', err);
-          });
-        }
-      });
-    };
-
-    // Add event listeners for user interaction
-    document.addEventListener('click', handleUserInteraction);
-    document.addEventListener('touchstart', handleUserInteraction);
-
-    return () => {
-      document.removeEventListener('click', handleUserInteraction);
-      document.removeEventListener('touchstart', handleUserInteraction);
-    };
-  }, []);
 
   // Update cleanup function
   const cleanupPeerConnection = (userId) => {
@@ -925,6 +743,20 @@ const VideoChat = () => {
     }
   };
 
+  // Add a retry button to the error container
+  const ErrorContainer = ({ error, onRetry, onDismiss }) => (
+    <div className="error-container glass fade-in">
+      <div className="error-content">
+        <h2 className="text-premium-bold">Connection Error</h2>
+        <p className="text-premium-light">{error}</p>
+        <div className="error-actions">
+          <button className="btn-premium" onClick={onRetry}>Try Again</button>
+          <button className="btn-premium" onClick={onDismiss}>Continue Without Camera</button>
+        </div>
+      </div>
+    </div>
+  );
+
   // Render functions
   if (error) {
     return (
@@ -952,121 +784,155 @@ const VideoChat = () => {
   }
 
   return (
-    <div className="container">
-      {showParticipants && renderParticipantList()}
-      <ConnectionStatus 
-        status={connectionStatus}
-        roomId={roomId}
-        isHost={isHost}
-      />
-      <div className="video-wrapper">
-        <div className={getVideoContainerClass()}>
-          {/* Local Video */}
-          {videoError ? (
-            <div className="video-error">
-              <span className="material-symbols-outlined">error</span>
-              <p>Camera not available</p>
-            </div>
-          ) : isVideoOff ? (
-            <div className="video-error local">
-              <span className="material-symbols-outlined">videocam_off</span>
-              <p>Camera turned off</p>
-            </div>
-          ) : (
-            <video
-              ref={localVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className="video-item local"
-              style={{ transform: 'scaleX(-1)', objectFit: 'cover' }}
-              onLoadedMetadata={(e) => {
-                console.log('Video metadata loaded');
-                e.target.play().catch(err => {
-                  console.error('Play failed:', err);
-                  setVideoError(true);
-                });
-              }}
-              onError={(e) => {
-                console.error('Video error:', e);
-                setVideoError(true);
-              }}
-            />
-          )}
-
-          {/* Remote Videos */}
-          {renderRemoteVideos()}
-        </div>
-        <div className="controls">
-          <button onClick={toggleAudio}>
-            {isAudioMuted ? (
-              <span className="material-symbols-outlined">mic_off</span>
-            ) : (
-              <span className="material-symbols-outlined">mic</span>
-            )}
-          </button>
-          <button onClick={toggleVideo}>
-            {isVideoOff ? (
-              <span className="material-symbols-outlined">videocam_off</span>
-            ) : (
-              <span className="material-symbols-outlined">videocam</span>
-            )}
-          </button>
-          <button onClick={toggleScreenShare}>
-            {isScreenSharing ? (
-              <span className="material-symbols-outlined">stop_screen_share</span>
-            ) : (
-              <span className="material-symbols-outlined">screen_share</span>
-            )}
-          </button>
-          <div className="control-separator"></div>
-          {isHost ? (
-            <button onClick={endCall} className="end-call">
-              <span className="material-symbols-outlined">call_end</span>
-            </button>
-          ) : (
-            <button onClick={leaveCall} className="leave-call">
-              <span className="material-symbols-outlined">logout</span>
-            </button>
-          )}
-          <button 
-            onClick={() => setShowParticipants(!showParticipants)}
-            className="participant-toggle"
-          >
-            <span className="material-symbols-outlined">
-              {showParticipants ? 'person_off' : 'people'}
-            </span>
-          </button>
+    <div className="video-chat-container fade-in">
+      {/* Premium Header */}
+      <div className="chat-header">
+        <h1 className="chat-title text-premium-bold">Video Chat</h1>
+        <div className="room-info">
+          <div className="room-id">
+            Room: {roomId}
+          </div>
+          {isHost && <span className="host-badge">Host</span>}
         </div>
       </div>
-      <div className="message-wrapper">
-        <h3>Chat</h3>
-        <div className="message-box">
-          {chatMessages.map((msg, index) => (
-            <div
-              key={index}
-              className={`message ${msg.userId === socket.id ? 'self' : 'other'}`}
-            >
-              <span className="username">
-                {msg.userId === socket.id ? 'You' : msg.username}
-                {msg.isHost && ' (Host)'}
-              </span>
-              <p>{msg.text}</p>
-              <span className="timestamp">
-                {new Date(msg.timestamp).toLocaleTimeString()}
-              </span>
+
+      {/* Main Content */}
+      <div className="chat-main">
+        {/* Video Section */}
+        <div className="video-section">
+          <div className="video-grid">
+            {/* Local Video */}
+            <div className="video-container">
+              {videoError ? (
+                <div className="video-placeholder">
+                  <div className="placeholder-icon">📹</div>
+                  <p className="participant-name">Camera Not Available</p>
+                </div>
+              ) : isVideoOff ? (
+                <div className="video-placeholder">
+                  <div className="placeholder-icon">📹</div>
+                  <p className="participant-name">Camera Off</p>
+                </div>
+              ) : (
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="video-element"
+                  style={{ transform: 'scaleX(-1)', objectFit: 'cover' }}
+                  onLoadedMetadata={(e) => {
+                    console.log('Video metadata loaded');
+                    e.target.play().catch(err => {
+                      console.error('Play failed:', err);
+                      setVideoError(true);
+                    });
+                  }}
+                  onError={(e) => {
+                    console.error('Video error:', e);
+                    setVideoError(true);
+                  }}
+                />
+              )}
+              <div className="participant-name">You</div>
             </div>
-          ))}
+
+            {/* Remote Videos */}
+            {renderRemoteVideos()}
+          </div>
+
+          {/* Premium Controls */}
+          <div className="controls">
+            <button 
+              className={`control-button ${isAudioMuted ? 'danger' : 'active'}`}
+              onClick={toggleAudio}
+              title={isAudioMuted ? 'Unmute' : 'Mute'}
+            >
+              {isAudioMuted ? '🔇' : '🎤'}
+            </button>
+            <button 
+              className={`control-button ${isVideoOff ? 'danger' : 'active'}`}
+              onClick={toggleVideo}
+              title={isVideoOff ? 'Turn on camera' : 'Turn off camera'}
+            >
+              {isVideoOff ? '📹' : '📷'}
+            </button>
+            <button 
+              className={`control-button ${isScreenSharing ? 'active' : ''}`}
+              onClick={toggleScreenShare}
+              title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
+            >
+              {isScreenSharing ? '⏹️' : '📺'}
+            </button>
+            {isHost ? (
+              <button 
+                className="control-button danger"
+                onClick={endCall}
+                title="End call for everyone"
+              >
+                📞
+              </button>
+            ) : (
+              <button 
+                className="control-button danger"
+                onClick={leaveCall}
+                title="Leave call"
+              >
+                🚪
+              </button>
+            )}
+          </div>
         </div>
-        <div className="message-input">
-          <input
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && sendMessage()}
-            placeholder="Type your message..."
-          />
-          <button onClick={sendMessage}>Send</button>
+
+        {/* Premium Sidebar */}
+        <div className="sidebar">
+          <div className="sidebar-header">
+            <h3 className="sidebar-title text-premium-bold">Participants</h3>
+          </div>
+          <div className="sidebar-content">
+            {renderParticipantList()}
+            
+            {/* Premium Chat */}
+            <div className="chat-section">
+              <h4 className="text-premium-bold">Chat</h4>
+              <div className="chat-messages">
+                {chatMessages.map((msg, index) => (
+                  <div
+                    key={index}
+                    className={`chat-message ${msg.userId === socket.id ? 'own' : 'other'}`}
+                  >
+                    <div className="message-header">
+                      <span className="username text-premium-bold">
+                        {msg.userId === socket.id ? 'You' : msg.username}
+                        {msg.isHost && ' (Host)'}
+                      </span>
+                      <span className="timestamp text-premium-light">
+                        {new Date(msg.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <p className="message-text text-premium">{msg.text}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="chat-input">
+                <input
+                  type="text"
+                  className="input-premium"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === "Enter" && sendMessage()}
+                  placeholder="Type your message..."
+                />
+                <button 
+                  className="btn-premium"
+                  onClick={sendMessage}
+                  disabled={!message.trim()}
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

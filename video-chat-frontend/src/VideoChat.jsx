@@ -3,6 +3,7 @@ import socket from "./socket";
 import RoomJoin from './components/RoomJoin';
 import ConnectionStatus from './components/ConnectionStatus';
 import ParticipantList from './components/ParticipantList';
+import { debugAudio } from './audioDebug';
 import './styles/VideoChat.css';
 
 const VideoChat = () => {
@@ -119,7 +120,13 @@ const VideoChat = () => {
 
       // Improved track handling
       peerConnection.ontrack = (event) => {
-        console.log('Received track:', event.track.kind, 'from:', userId);
+        console.log('Received track:', {
+          kind: event.track.kind,
+          enabled: event.track.enabled,
+          muted: event.track.muted,
+          readyState: event.track.readyState,
+          from: userId
+        });
         
         if (!event.streams || !event.streams[0]) {
           console.warn('Received track without stream');
@@ -127,6 +134,12 @@ const VideoChat = () => {
         }
 
         const newStream = event.streams[0];
+        console.log('Received stream with tracks:', newStream.getTracks().map(track => ({
+          kind: track.kind,
+          enabled: track.enabled,
+          muted: track.muted,
+          readyState: track.readyState
+        })));
         
         // Ensure we're not duplicating streams
         setRemoteStreams(prevStreams => {
@@ -155,6 +168,21 @@ const VideoChat = () => {
           console.log('Track ended:', userId, event.track.kind);
           handleTrackEnded(userId, event.track);
         };
+
+        // Special handling for audio tracks
+        if (event.track.kind === 'audio') {
+          console.log('Audio track received from:', userId, {
+            enabled: event.track.enabled,
+            muted: event.track.muted,
+            readyState: event.track.readyState
+          });
+          
+          // Ensure the audio track is enabled
+          if (!event.track.enabled) {
+            console.log('Enabling received audio track');
+            event.track.enabled = true;
+          }
+        }
       };
 
       // Enhanced ICE handling
@@ -288,7 +316,13 @@ const VideoChat = () => {
         console.log(`Adding ${tracks.length} tracks to peer connection`);
         
         tracks.forEach(track => {
-          console.log('Adding track:', track.kind);
+          console.log('Adding track:', {
+            kind: track.kind,
+            enabled: track.enabled,
+            muted: track.muted,
+            readyState: track.readyState,
+            settings: track.getSettings()
+          });
           peerConnection.addTrack(track, localStreamRef.current);
         });
       }
@@ -508,6 +542,31 @@ const VideoChat = () => {
         track.enabled = !track.enabled;
       });
       setIsAudioMuted(!isAudioMuted);
+    }
+  };
+
+  // Function to test and enable audio for all remote videos
+  const enableRemoteAudio = () => {
+    console.log('Manually enabling remote audio...');
+    
+    // Use the debugging utility to get detailed info
+    const audioCheck = debugAudio.fullAudioCheck();
+    console.log('Full audio check:', audioCheck);
+    
+    // Force enable audio for all remote videos
+    const results = debugAudio.forceEnableAudio();
+    console.log('Audio enable results:', results);
+    
+    // Also try to resume any suspended audio context
+    if (window.AudioContext || window.webkitAudioContext) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (AudioContext.state === 'suspended') {
+        AudioContext.resume().then(() => {
+          console.log('Audio context resumed');
+        }).catch(err => {
+          console.warn('Failed to resume audio context:', err);
+        });
+      }
     }
   };
 
@@ -816,6 +875,14 @@ const VideoChat = () => {
               ref={el => {
                 if (el && streamInfo.stream && el.srcObject !== streamInfo.stream) {
                   el.srcObject = streamInfo.stream;
+                  console.log('Setting remote video srcObject for user:', streamInfo.userId);
+                  console.log('Remote stream tracks:', streamInfo.stream.getTracks().map(track => ({
+                    kind: track.kind,
+                    enabled: track.enabled,
+                    muted: track.muted,
+                    readyState: track.readyState
+                  })));
+                  
                   // Only attempt to play if the video is not already playing
                   if (el.paused) {
                     el.play().catch(err => {
@@ -828,11 +895,42 @@ const VideoChat = () => {
               style={{ transform: 'scaleX(-1)' }}
               onLoadedMetadata={(e) => {
                 const video = e.target;
+                console.log('Remote video metadata loaded for user:', streamInfo.userId);
+                console.log('Video element properties:', {
+                  paused: video.paused,
+                  muted: video.muted,
+                  volume: video.volume,
+                  readyState: video.readyState
+                });
+                
                 if (video.paused) {
                   video.play().catch(err => {
                     console.warn('Play on loadedmetadata failed:', err);
                   });
                 }
+              }}
+              onCanPlay={(e) => {
+                console.log('Remote video can play for user:', streamInfo.userId);
+                const video = e.target;
+                
+                // Ensure audio is enabled
+                video.muted = false;
+                video.volume = 1.0;
+                
+                if (video.paused) {
+                  video.play().catch(err => {
+                    console.warn('Play on canplay failed:', err);
+                  });
+                }
+                
+                console.log('Remote video audio settings:', {
+                  muted: video.muted,
+                  volume: video.volume,
+                  paused: video.paused
+                });
+              }}
+              onError={(e) => {
+                console.error('Remote video error for user:', streamInfo.userId, e);
               }}
             />
           )}
@@ -873,7 +971,7 @@ const VideoChat = () => {
     };
   }, []);
 
-  // Add a useEffect to handle automatic video playing
+  // Add a useEffect to handle automatic video playing and audio issues
   useEffect(() => {
     const handleUserInteraction = () => {
       const videos = document.querySelectorAll('video');
@@ -881,6 +979,17 @@ const VideoChat = () => {
         if (video.paused) {
           video.play().catch(err => {
             console.warn('Play after user interaction failed:', err);
+          });
+        }
+        
+        // Ensure remote videos are unmuted and have volume
+        if (!video.classList.contains('local')) {
+          video.muted = false;
+          video.volume = 1.0;
+          console.log('Ensuring remote video is unmuted:', {
+            muted: video.muted,
+            volume: video.volume,
+            paused: video.paused
           });
         }
       });
@@ -895,6 +1004,16 @@ const VideoChat = () => {
       document.removeEventListener('touchstart', handleUserInteraction);
     };
   }, []);
+
+  // Add useEffect to automatically enable audio when remote streams change
+  useEffect(() => {
+    if (remoteStreams.length > 0) {
+      console.log('Remote streams changed, checking audio...');
+      setTimeout(() => {
+        enableRemoteAudio();
+      }, 1000); // Small delay to ensure video elements are rendered
+    }
+  }, [remoteStreams]);
 
   // Update cleanup function
   const cleanupPeerConnection = (userId) => {
@@ -1018,6 +1137,9 @@ const VideoChat = () => {
             ) : (
               <span className="material-symbols-outlined">screen_share</span>
             )}
+          </button>
+          <button onClick={enableRemoteAudio} title="Enable Remote Audio">
+            <span className="material-symbols-outlined">volume_up</span>
           </button>
           <div className="control-separator"></div>
           {isHost ? (

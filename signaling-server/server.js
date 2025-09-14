@@ -5,7 +5,18 @@ const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
-app.use(cors());
+
+// Configure CORS for Express
+const corsOptions = {
+    origin: [
+        process.env.FRONTEND_URL || "http://localhost:5173",
+        "https://testappcall.vercel.app",
+        "https://*.vercel.app"
+    ],
+    credentials: true
+};
+
+app.use(cors(corsOptions));
 
 // Health check endpoint for Railway
 app.get('/', (req, res) => {
@@ -28,7 +39,11 @@ app.get('/health', (req, res) => {
 
 const io = socketIO(server, {
     cors: {
-        origin: process.env.FRONTEND_URL || "http://localhost:5173",
+        origin: [
+            process.env.FRONTEND_URL || "http://localhost:5173",
+            "https://testappcall.vercel.app",
+            "https://*.vercel.app"
+        ],
         methods: ["GET", "POST"],
         credentials: true
     }

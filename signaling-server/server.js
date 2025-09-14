@@ -7,6 +7,25 @@ const app = express();
 const server = http.createServer(app);
 app.use(cors());
 
+// Health check endpoint for Railway
+app.get('/', (req, res) => {
+    res.status(200).json({ 
+        status: 'ok', 
+        message: 'Video Chat Signaling Server is running!',
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).json({ 
+        status: 'healthy', 
+        message: 'Server is healthy',
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString()
+    });
+});
+
 const io = socketIO(server, {
     cors: {
         origin: process.env.FRONTEND_URL || "http://localhost:5173",

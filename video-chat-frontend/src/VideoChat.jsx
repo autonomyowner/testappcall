@@ -405,7 +405,8 @@ const VideoChat = () => {
 
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
-        socket.emit('answer', { to: from, answer });
+        // Include roomId so the server accepts and routes the answer
+        socket.emit('answer', { to: from, answer, roomId });
       } catch (error) {
         console.error('Error handling offer:', error);
       }
@@ -558,15 +559,20 @@ const VideoChat = () => {
     console.log('Audio enable results:', results);
     
     // Also try to resume any suspended audio context
-    if (window.AudioContext || window.webkitAudioContext) {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (AudioContext.state === 'suspended') {
-        AudioContext.resume().then(() => {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) {
+        const ctx = new AC();
+        ctx.resume().then(() => {
           console.log('Audio context resumed');
+          // Close to release resources; remote <video> does not require this context
+          ctx.close().catch(() => {});
         }).catch(err => {
           console.warn('Failed to resume audio context:', err);
         });
       }
+    } catch (err) {
+      console.warn('AudioContext not available or failed to initialize:', err);
     }
   };
 

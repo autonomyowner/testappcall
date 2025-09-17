@@ -6,7 +6,16 @@ import ErrorBoundary from './ErrorBoundary';
 function App() {
   return (
     <ErrorBoundary>
-      <VideoChat />
+      <>
+        <header className="brand-header">
+          <div className="brand-inner">
+            <h1 className="brand-title">
+              Travoice <span className="brand-phase">test phase 2</span>
+            </h1>
+          </div>
+        </header>
+        <VideoChat />
+      </>
     </ErrorBoundary>
   );
 }

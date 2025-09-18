@@ -6,17 +6,25 @@ const cors = require('cors');
 const app = express();
 const server = http.createServer(app);
 
-// Configure CORS for Express
-const corsOptions = {
-    origin: [
-        process.env.FRONTEND_URL || "http://localhost:5173",
-        "https://testappcall.vercel.app",
-        "https://*.vercel.app"
-    ],
-    credentials: true
-};
+// Configure CORS for Express (allow specific origin, localhost, and Vercel previews)
+const allowedFrontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+const vercelPreviewRegex = /^https?:\/\/([a-z0-9-]+-)?[a-z0-9-]+\.vercel\.app$/i;
 
-app.use(cors(corsOptions));
+function isAllowedOrigin(origin) {
+    if (!origin) return true; // allow non-browser clients
+    if (origin === allowedFrontendUrl) return true;
+    if (origin === "http://localhost:5173") return true;
+    if (vercelPreviewRegex.test(origin)) return true;
+    return false;
+}
+
+app.use(cors({
+    origin: (origin, callback) => {
+        if (isAllowedOrigin(origin)) return callback(null, true);
+        return callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true
+}));
 
 // Health check endpoint for Railway
 app.get('/', (req, res) => {
@@ -39,11 +47,10 @@ app.get('/health', (req, res) => {
 
 const io = socketIO(server, {
     cors: {
-        origin: [
-            process.env.FRONTEND_URL || "http://localhost:5173",
-            "https://testappcall.vercel.app",
-            "https://*.vercel.app"
-        ],
+        origin: (origin, callback) => {
+            if (isAllowedOrigin(origin)) return callback(null, true);
+            return callback(new Error('Not allowed by CORS'));
+        },
         methods: ["GET", "POST"],
         credentials: true
     }

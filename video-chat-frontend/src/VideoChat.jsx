@@ -48,7 +48,13 @@ const VideoChat = () => {
       height: { ideal: 720 },
       facingMode: 'user'
     }, 
-    audio: true 
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      sampleRate: 48000,
+      channelCount: 1
+    }
   }) => {
     try {
       // Stop any existing streams first
@@ -71,7 +77,13 @@ const VideoChat = () => {
         // If video fails, try audio only
         const audioOnlyStream = await navigator.mediaDevices.getUserMedia({ 
           video: false, 
-          audio: true 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 48000,
+            channelCount: 1
+          }
         });
         
         if (!audioOnlyStream) throw new Error('No audio stream received');
@@ -347,7 +359,8 @@ const VideoChat = () => {
       console.log('Creating offer for:', userId);
       const offer = await peerConnection.createOffer({
         offerToReceiveAudio: true,
-        offerToReceiveVideo: true
+        offerToReceiveVideo: true,
+        voiceActivityDetection: false
       });
       
       console.log('Setting local description');
@@ -419,7 +432,11 @@ const VideoChat = () => {
           });
         }
 
-        const answer = await peerConnection.createAnswer();
+        const answer = await peerConnection.createAnswer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true,
+          voiceActivityDetection: false
+        });
         await peerConnection.setLocalDescription(answer);
         // Include roomId so the server accepts and routes the answer
         socket.emit('answer', { to: from, answer, roomId });
@@ -562,34 +579,104 @@ const VideoChat = () => {
     }
   };
 
-  // Function to test and enable audio for all remote videos
-  const enableRemoteAudio = () => {
+  // Enhanced function to enable audio with browser autoplay handling
+  const enableRemoteAudio = async () => {
     console.log('Manually enabling remote audio...');
     
     // Use the debugging utility to get detailed info
     const audioCheck = debugAudio.fullAudioCheck();
     console.log('Full audio check:', audioCheck);
     
-    // Force enable audio for all remote videos
-    const results = debugAudio.forceEnableAudio();
-    console.log('Audio enable results:', results);
-    
-    // Also try to resume any suspended audio context
+    // Try to resume suspended audio context first
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (AC) {
         const ctx = new AC();
-        ctx.resume().then(() => {
-          console.log('Audio context resumed');
-          // Close to release resources; remote <video> does not require this context
-          ctx.close().catch(() => {});
-        }).catch(err => {
-          console.warn('Failed to resume audio context:', err);
-        });
+        if (ctx.state === 'suspended') {
+          await ctx.resume();
+          console.log('Audio context resumed from suspended state');
+        }
+        ctx.close().catch(() => {});
       }
     } catch (err) {
-      console.warn('AudioContext not available or failed to initialize:', err);
+      console.warn('AudioContext handling failed:', err);
     }
+
+    // Force enable audio for all remote videos with enhanced handling
+    const remoteVideos = document.querySelectorAll('video:not(.local)');
+    const results = [];
+    
+    for (const video of remoteVideos) {
+      try {
+        const before = {
+          muted: video.muted,
+          volume: video.volume,
+          paused: video.paused
+        };
+        
+        // Force unmute and set volume
+        video.muted = false;
+        video.volume = 1.0;
+        
+        // Try to play the video if it's paused
+        if (video.paused) {
+          await video.play().catch(err => {
+            console.warn('Video play failed:', err);
+          });
+        }
+        
+        // Additional audio context creation for this video
+        if (video.srcObject) {
+          try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (AudioContext) {
+              const audioCtx = new AudioContext();
+              if (audioCtx.state === 'suspended') {
+                await audioCtx.resume();
+              }
+              const source = audioCtx.createMediaStreamSource(video.srcObject);
+              const gainNode = audioCtx.createGain();
+              gainNode.gain.value = 1.0;
+              source.connect(gainNode);
+              // Don't connect to destination to avoid feedback
+              setTimeout(() => audioCtx.close().catch(() => {}), 1000);
+            }
+          } catch (audioCtxErr) {
+            console.warn('Audio context creation for video failed:', audioCtxErr);
+          }
+        }
+        
+        const after = {
+          muted: video.muted,
+          volume: video.volume,
+          paused: video.paused
+        };
+        
+        results.push({ before, after, success: !video.muted && video.volume > 0 });
+        console.log('Video audio settings updated:', { before, after });
+        
+      } catch (err) {
+        console.error('Failed to enable audio for video:', err);
+        results.push({ error: err.message });
+      }
+    }
+    
+    console.log('Audio enable results:', results);
+    
+    // Also force enable any audio tracks in remote streams
+    remoteStreams.forEach((streamInfo, index) => {
+      if (streamInfo.stream) {
+        const audioTracks = streamInfo.stream.getAudioTracks();
+        audioTracks.forEach(track => {
+          if (!track.enabled) {
+            track.enabled = true;
+            console.log(`Enabled audio track for user ${streamInfo.userId}`);
+          }
+        });
+      }
+    });
+    
+    return results;
   };
 
   const toggleVideo = () => {
@@ -931,7 +1018,7 @@ const VideoChat = () => {
                   });
                 }
               }}
-              onCanPlay={(e) => {
+              onCanPlay={async (e) => {
                 console.log('Remote video can play for user:', streamInfo.userId);
                 const video = e.target;
                 
@@ -939,8 +1026,38 @@ const VideoChat = () => {
                 video.muted = false;
                 video.volume = 1.0;
                 
+                // Create audio context to ensure audio routing works
+                if (video.srcObject) {
+                  try {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContext) {
+                      const audioCtx = new AudioContext();
+                      if (audioCtx.state === 'suspended') {
+                        await audioCtx.resume().catch(err => console.warn('Audio context resume failed:', err));
+                      }
+                      // Create source to establish audio pipeline
+                      audioCtx.createMediaStreamSource(video.srcObject);
+                      setTimeout(() => audioCtx.close().catch(() => {}), 1000);
+                      console.log('Audio context created for remote video');
+                    }
+                  } catch (audioErr) {
+                    console.warn('Audio context creation failed:', audioErr);
+                  }
+                }
+                
+                // Enable audio tracks
+                if (streamInfo.stream) {
+                  const audioTracks = streamInfo.stream.getAudioTracks();
+                  audioTracks.forEach(track => {
+                    if (!track.enabled) {
+                      track.enabled = true;
+                      console.log('Enabled audio track in onCanPlay');
+                    }
+                  });
+                }
+                
                 if (video.paused) {
-                  video.play().catch(err => {
+                  await video.play().catch(err => {
                     console.warn('Play on canplay failed:', err);
                   });
                 }
@@ -948,7 +1065,8 @@ const VideoChat = () => {
                 console.log('Remote video audio settings:', {
                   muted: video.muted,
                   volume: video.volume,
-                  paused: video.paused
+                  paused: video.paused,
+                  audioTracks: streamInfo.stream?.getAudioTracks().length || 0
                 });
               }}
               onError={(e) => {
@@ -993,47 +1111,139 @@ const VideoChat = () => {
     };
   }, []);
 
-  // Add a useEffect to handle automatic video playing and audio issues
+  // Enhanced user interaction handler for audio enablement
   useEffect(() => {
-    const handleUserInteraction = () => {
-      const videos = document.querySelectorAll('video');
-      videos.forEach(video => {
-        if (video.paused) {
-          video.play().catch(err => {
-            console.warn('Play after user interaction failed:', err);
-          });
+    const handleUserInteraction = async () => {
+      console.log('User interaction detected, enabling audio...');
+      
+      // Resume any suspended audio contexts
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) {
+          const ctx = new AudioContext();
+          if (ctx.state === 'suspended') {
+            await ctx.resume();
+            console.log('Audio context resumed from user interaction');
+          }
+          ctx.close().catch(() => {});
         }
-        
-        // Ensure remote videos are unmuted and have volume
-        if (!video.classList.contains('local')) {
-          video.muted = false;
-          video.volume = 1.0;
-          console.log('Ensuring remote video is unmuted:', {
-            muted: video.muted,
-            volume: video.volume,
-            paused: video.paused
+      } catch (err) {
+        console.warn('Audio context resume failed:', err);
+      }
+      
+      // Handle all videos
+      const videos = document.querySelectorAll('video');
+      for (const video of videos) {
+        try {
+          if (video.paused) {
+            await video.play().catch(err => {
+              console.warn('Play after user interaction failed:', err);
+            });
+          }
+          
+          // Ensure remote videos are unmuted and have volume
+          if (!video.classList.contains('local')) {
+            video.muted = false;
+            video.volume = 1.0;
+            
+            // Create audio context for this specific video to ensure audio routing
+            if (video.srcObject) {
+              try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) {
+                  const audioCtx = new AudioContext();
+                  if (audioCtx.state === 'suspended') {
+                    await audioCtx.resume();
+                  }
+                  // Just create the source to establish audio pipeline
+                  audioCtx.createMediaStreamSource(video.srcObject);
+                  setTimeout(() => audioCtx.close().catch(() => {}), 500);
+                }
+              } catch (audioErr) {
+                console.warn('Audio context creation for video failed:', audioErr);
+              }
+            }
+            
+            console.log('Ensured remote video audio:', {
+              muted: video.muted,
+              volume: video.volume,
+              paused: video.paused,
+              hasAudioTracks: video.srcObject?.getAudioTracks().length > 0
+            });
+          }
+        } catch (err) {
+          console.warn('Error handling video in user interaction:', err);
+        }
+      }
+      
+      // Also enable audio tracks in all remote streams
+      remoteStreams.forEach((streamInfo) => {
+        if (streamInfo.stream) {
+          const audioTracks = streamInfo.stream.getAudioTracks();
+          audioTracks.forEach(track => {
+            if (!track.enabled) {
+              track.enabled = true;
+              console.log(`Enabled audio track for user ${streamInfo.userId} from user interaction`);
+            }
           });
         }
       });
     };
 
     // Add event listeners for user interaction
-    document.addEventListener('click', handleUserInteraction);
-    document.addEventListener('touchstart', handleUserInteraction);
+    const events = ['click', 'touchstart', 'keydown', 'mousedown'];
+    events.forEach(event => {
+      document.addEventListener(event, handleUserInteraction, { once: false });
+    });
 
     return () => {
-      document.removeEventListener('click', handleUserInteraction);
-      document.removeEventListener('touchstart', handleUserInteraction);
+      events.forEach(event => {
+        document.removeEventListener(event, handleUserInteraction);
+      });
     };
-  }, []);
+  }, [remoteStreams]);
 
-  // Add useEffect to automatically enable audio when remote streams change
+  // Enhanced auto-fix for audio when remote streams change
   useEffect(() => {
     if (remoteStreams.length > 0) {
-      console.log('Remote streams changed, checking audio...');
-      setTimeout(() => {
-        enableRemoteAudio();
-      }, 1000); // Small delay to ensure video elements are rendered
+      console.log('Remote streams changed, auto-enabling audio...');
+      
+      const autoFixAudio = async () => {
+        try {
+          // Wait for video elements to be rendered
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          
+          // Auto-enable audio
+          const results = await enableRemoteAudio();
+          console.log('Auto audio fix results:', results);
+          
+          // Additional check after another delay
+          setTimeout(async () => {
+            const videos = document.querySelectorAll('video:not(.local)');
+            let audioIssuesFound = false;
+            
+            videos.forEach(video => {
+              if (video.muted || video.volume === 0) {
+                audioIssuesFound = true;
+                console.warn('Audio issue detected after auto-fix:', {
+                  muted: video.muted,
+                  volume: video.volume
+                });
+              }
+            });
+            
+            if (audioIssuesFound) {
+              console.log('Audio issues still present, running secondary fix...');
+              await enableRemoteAudio();
+            }
+          }, 2000);
+          
+        } catch (err) {
+          console.error('Auto audio fix failed:', err);
+        }
+      };
+      
+      autoFixAudio();
     }
   }, [remoteStreams]);
 
@@ -1160,7 +1370,12 @@ const VideoChat = () => {
               <span className="material-symbols-outlined">screen_share</span>
             )}
           </button>
-          <button onClick={enableRemoteAudio} title="Enable Remote Audio">
+          <button 
+            onClick={enableRemoteAudio} 
+            title="Fix Audio Issues - Click if you can't hear others"
+            className="audio-fix-button"
+            style={{ backgroundColor: '#ff6b6b', color: 'white' }}
+          >
             <span className="material-symbols-outlined">volume_up</span>
           </button>
           <div className="control-separator"></div>

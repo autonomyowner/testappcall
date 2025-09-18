@@ -2,25 +2,27 @@
 
 ## Issue: Voice/Audio Not Working
 
-If you're experiencing issues with audio not working in the video chat, follow these debugging steps:
+If you're experiencing issues with audio not working in the video chat (you can see video and send messages, but can't hear each other), follow these debugging steps:
 
-## Quick Fixes
+## 🔴 IMMEDIATE FIXES
 
-### 1. Click the Volume Button
-- Look for the volume button (🔊) in the video chat controls
-- Click it to manually enable remote audio
-- This will force unmute all remote video elements
+### 1. Click the RED Audio Fix Button
+- Look for the **RED volume button (🔊)** in the video chat controls
+- This button says "Fix Audio Issues - Click if you can't hear others"
+- Click it to manually enable remote audio and fix browser audio contexts
+- This should resolve most audio issues immediately
 
 ### 2. Check Browser Console
 - Open Developer Tools (F12)
 - Go to the Console tab
 - Look for audio-related error messages
-- The app now logs detailed audio information
+- The app now logs detailed audio information automatically
 
-### 3. Browser Permissions
+### 3. Browser Permissions & Autoplay
 - Make sure microphone permissions are granted
 - Check if the browser is blocking autoplay
-- Try refreshing the page and allowing permissions again
+- Try clicking anywhere on the page first
+- Refresh the page and allow permissions again
 
 ## Advanced Debugging
 
@@ -72,21 +74,26 @@ debugAudio.checkAudioContext()
 
 ## What Was Fixed
 
-1. **Enhanced Audio Track Handling**: Added special handling for audio tracks when received
-2. **Automatic Audio Enablement**: Remote videos are automatically unmuted and have volume set
-3. **User Interaction Handling**: Audio is enabled on any user interaction (click, touch)
-4. **Audio Context Management**: Automatically resumes suspended audio contexts
-5. **Manual Override Button**: Added volume button for manual audio enablement
-6. **Comprehensive Logging**: Added detailed console logging for audio debugging
-7. **Debug Utilities**: Added `debugAudio` object for advanced debugging
+1. **Enhanced Audio Constraints**: Improved audio quality settings (echo cancellation, noise suppression, auto gain control)
+2. **Enhanced Audio Track Handling**: Added special handling for audio tracks when received
+3. **Multiple Auto-Fix Mechanisms**: Automatic audio enablement on stream changes with retries
+4. **Advanced User Interaction Handling**: Audio is enabled on any user interaction (click, touch, keydown, mousedown)
+5. **Audio Context Management**: Automatically creates and resumes suspended audio contexts for each video
+6. **Prominent Audio Fix Button**: Added red volume button for immediate manual audio enablement
+7. **WebRTC Audio Configuration**: Fixed offer/answer audio configuration with proper voice activity detection
+8. **Comprehensive Logging**: Added detailed console logging for audio debugging
+9. **Debug Utilities**: Added `debugAudio` object for advanced debugging
+10. **Multiple Audio Routing**: Creates audio contexts for each remote video to ensure proper audio routing
 
 ## Testing Steps
 
 1. Start a video call between two users
-2. Check browser console for audio-related logs
+2. Check browser console for audio-related logs (automatic)
 3. Try speaking - you should see audio track logs
-4. If no audio, click the volume button (🔊)
-5. Use `debugAudio.fullAudioCheck()` in console for detailed info
+4. **If no audio, click the RED volume button (🔊)** immediately
+5. The app will automatically try to fix audio issues when someone joins
+6. Use `debugAudio.fullAudioCheck()` in console for detailed info
+7. Try clicking anywhere on the page to trigger user interaction audio fixes
 
 ## Browser Compatibility
 
@@ -99,8 +106,27 @@ debugAudio.checkAudioContext()
 
 If audio still doesn't work after trying these fixes:
 
-1. Check the browser console for specific error messages
-2. Try the debug commands in the console
-3. Test with different browsers
-4. Check if the issue is with sending or receiving audio
-5. Verify microphone permissions are granted
+1. **Click the RED audio fix button multiple times**
+2. Check the browser console for specific error messages  
+3. Try the debug commands in the console: `debugAudio.fullAudioCheck()`
+4. Test with different browsers (Chrome/Edge work best)
+5. Check if the issue is with sending or receiving audio
+6. Verify microphone permissions are granted
+7. Try refreshing the page and rejoining the room
+8. Click anywhere on the page first before the call starts
+9. Make sure both participants click the RED audio fix button
+
+## Browser-Specific Notes
+
+- **Chrome/Edge**: Best compatibility, use these browsers if possible
+- **Firefox**: Should work with the enhanced fixes
+- **Safari**: May require additional clicks due to stricter autoplay policies
+- **Mobile Browsers**: May need multiple user interactions to enable audio
+
+## New Features Added
+
+- **Automatic Audio Repair**: The app now automatically detects and fixes audio issues
+- **Enhanced Audio Quality**: Better audio settings for clearer sound
+- **Multiple Fix Attempts**: The app tries multiple times to enable audio
+- **Visual Audio Fix Button**: Prominent red button to fix audio issues
+- **Better Error Logging**: More detailed audio debugging information

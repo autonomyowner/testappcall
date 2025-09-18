@@ -17,7 +17,12 @@
 3. Click "Import Project"
 4. Select your `testappcall` repository
 5. **IMPORTANT**: Set the **Root Directory** to `video-chat-frontend`
-6. Add environment variable: `VITE_SERVER_URL=https://your-backend-url.railway.app`
+6. Add environment variables:
+   - `VITE_SERVER_URL=https://your-backend-url.railway.app`
+   - Optional TURN (recommended for restrictive networks):
+     - `VITE_TURN_URL=turns:your-turn.example.com:5349,turn:your-turn.example.com:3478`
+     - `VITE_TURN_USERNAME=your-username`
+     - `VITE_TURN_CREDENTIAL=your-credential`
 7. Deploy!
 
 ## Environment Variables

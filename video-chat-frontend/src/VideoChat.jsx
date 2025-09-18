@@ -109,12 +109,28 @@ const VideoChat = () => {
     try {
       console.log('Creating peer connection for:', userId);
       
-      const configuration = {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      };
+      // Build ICE server list with optional TURN from env
+      const iceServers = [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ];
+
+      const turnUrl = import.meta.env.VITE_TURN_URL;
+      const turnUsername = import.meta.env.VITE_TURN_USERNAME;
+      const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
+      if (turnUrl && turnUsername && turnCredential) {
+        try {
+          const urls = turnUrl.includes(',')
+            ? turnUrl.split(',').map(u => u.trim()).filter(Boolean)
+            : turnUrl;
+          iceServers.push({ urls, username: turnUsername, credential: turnCredential });
+          console.log('TURN server configured');
+        } catch (e) {
+          console.warn('Failed to configure TURN server from env:', e);
+        }
+      }
+
+      const configuration = { iceServers };
 
       const peerConnection = new RTCPeerConnection(configuration);
 
